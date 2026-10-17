@@ -1,4 +1,4 @@
-text = f"⚙️ **إعدادات الصفقة الحالية:**\n\n🔹 الزوج: `{pair}`\n🔹 المدة: `{tf}`"
+ = f"⚙️ **إعدادات الصفقة الحالية:**\n\n🔹 الزوج: `{pair}`\n🔹 المدة: `{tf}`"
         bot.answer_callback_query(call.id, "عرض الإعدادات")
         bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=main_keyboard(), parse_mode="Markdown")
 
