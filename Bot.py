@@ -156,7 +156,7 @@ import telebot
 from telebot import types
 
 # ضع توكن البوت الخاص بك من BotFather مكان التوكن أدناه
-TOKEN = "8900876880:AAHGQyZ_yd8j9MNubKzJ_p6RRg9j5EVcb_4"
+TOKEN =8900876880:AAHGQyZ_yd8j9MNubKzJ_p6RRg9j5EVcb_4
 
 bot = telebot.TeleBot(TOKEN)
 
