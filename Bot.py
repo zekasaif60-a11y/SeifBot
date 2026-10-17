@@ -5,7 +5,7 @@ from flask import Flask
 import telebot
 from telebot import types
 
-# 1. تشغيل خادم Flask وهمي لفتح Port على Render
+# 1. خادم Flask الوهمي
 app = Flask(__name__)
 
 @app.route('/')
@@ -22,7 +22,6 @@ threading.Thread(target=run_flask, daemon=True).start()
 TOKEN = "8900876880:AAHGQyZ_yd8j9MNubKzJ_p6RRg9j5EVcb_4"
 bot = telebot.TeleBot(TOKEN)
 
-# قائمة أزواج Pocket Option
 PAIRS = [
     "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)", "AUD/USD (OTC)", 
     "USD/CHF (OTC)", "USD/CAD (OTC)", "NZD/USD (OTC)",
@@ -44,20 +43,22 @@ REASONS = [
 
 user_data = {}
 
+def get_main_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn_pairs = types.InlineKeyboardButton("📊 اختر الزوج", callback_data="btn_pairs")
+    btn_tf = types.InlineKeyboardButton("⏱️ الفريم الزمني", callback_data="btn_tf")
+    btn_signal = types.InlineKeyboardButton("🎯 استخراج إشارة الآن", callback_data="btn_signal")
+    markup.add(btn_pairs, btn_tf)
+    markup.add(btn_signal)
+    return markup
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_pairs = types.InlineKeyboardButton("📊 كل أزواج Pocket Option", callback_data="btn_pairs")
-    btn_tf = types.InlineKeyboardButton("⏱️ الفريم الزمني", callback_data="btn_tf")
-    btn_signal = types.InlineKeyboardButton("🎯 استخراج إشارة تداول", callback_data="btn_signal")
-    markup.add(btn_pairs, btn_tf, btn_signal)
-    
     welcome_text = (
-        f"👋 أهلاً بك يا زكريا في بوت Seif الاحترافي لتداول Pocket Option!\n\n"
-        "⚡ تم إضافة جميع أزواج المنصة بنجاح.\n"
-        "اختر من القائمة أدناه للبدء:"
+        f"👋 أهلاً بك يا زكريا في بوت Seif لتداول Pocket Option!\n\n"
+        "⚡ اختر الزوج والفريم المفضل لديك، ثم اضغط على 'استخراج إشارة الآن'."
     )
-    bot.reply_to(message, welcome_text, reply_markup=markup)
+    bot.reply_to(message, welcome_text, reply_markup=get_main_keyboard())
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
@@ -73,19 +74,33 @@ def callback_inline(call):
         selected_pair = call.data.replace("pair_", "")
         user_data[chat_id] = user_data.get(chat_id, {})
         user_data[chat_id]['pair'] = selected_pair
-        bot.send_message(chat_id, f"✅ تم اختيار الزوج: *{selected_pair}*", parse_mode="Markdown")
+        
+        # يبعتلك زر الاستخراج تحت أيدك مباشرة
+        bot.send_message(
+            chat_id, 
+            f"✅ تم اختيار الزوج: *{selected_pair}*\nاضغط أدناه لاستخراج الإشارة:", 
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard()
+        )
 
     elif call.data == "btn_tf":
         markup = types.InlineKeyboardMarkup(row_width=2)
         for tf in TIMEFRAMES:
             markup.add(types.InlineKeyboardButton(tf, callback_data=f"tf_{tf}"))
-        bot.send_message(chat_id, "⏱️ اختر مدة الصَفقة (من 30 ثانية إلى 5 دقائق):", reply_markup=markup)
+        bot.send_message(chat_id, "⏱️ اختر مدة الصَفقة:", reply_markup=markup)
 
     elif call.data.startswith("tf_"):
         selected_tf = call.data.replace("tf_", "")
         user_data[chat_id] = user_data.get(chat_id, {})
         user_data[chat_id]['tf'] = selected_tf
-        bot.send_message(chat_id, f"✅ تم اختيار المدة: *{selected_tf}*", parse_mode="Markdown")
+        
+        # يبعتلك زر الاستخراج تحت أيدك مباشرة
+        bot.send_message(
+            chat_id, 
+            f"✅ تم اختيار المدة: *{selected_tf}*\nاضغط أدناه لاستخراج الإشارة:", 
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard()
+        )
 
     elif call.data == "btn_signal":
         pair = user_data.get(chat_id, {}).get('pair', PAIRS[0])
@@ -110,7 +125,8 @@ def callback_inline(call):
             f"━━━━━━━━━━━━━━━━━━\n"
             f"⚠️ *التزم بإدارة راس مالك واقتنص الفرص القوية.*"
         )
-        bot.send_message(chat_id, signal_msg, parse_mode="Markdown")
+        # يرفق القائمة وزر استخراج إشارة جديدة أسفل التوصية مباشرة
+        bot.send_message(chat_id, signal_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
 if __name__ == '__main__':
     bot.infinity_polling()
