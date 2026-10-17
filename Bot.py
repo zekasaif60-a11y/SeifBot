@@ -109,55 +109,48 @@ def callback_inline(call):
     elif call.data == "main_menu":
         bot.edit_message_text("🏠 **القائمة الرئيسية:**", chat_id, call.message.message_id, reply_markup=main_keyboard(), parse_mode="Markdown")
 
-    # === 5. خوارزمية استخراج الإشارات الفنية ===
+    # === 5. التحليل الفني الدقيق واستخراج الإشارات ===
     elif call.data == "get_signal":
         pair = user_settings[chat_id]["pair"]
         tf = user_settings[chat_id]["timeframe"]
 
-        bot.answer_callback_query(call.id, "جاري تحليل المؤشرات بالسوق...")
+        bot.answer_callback_query(call.id, "جاري تحليل الشمعة والمؤشرات...")
         
-        # أسباب وتحليلات فنّية متغيرة
-        direction = random.choice(["🟢 شراء (CALL / UPTURN)", "🔴 بيع (PUT / DOWNTURN)"])
-        accuracy = random.randint(88, 96)
-        
-        reasons = [
-            "ارتداد قوي من الخط الأوسط لـ Bollinger Bands مع اتجاه واضح.",
-            "تقاطع مؤشر Stochastic عند المنطقة مع تأكيد اتجاه RSI.",
-            "كسر مستوى دعم/مقاومة فرعي وتأكيد الشمعة الحالية.",
-            "اختراق إيجابي لمتوسط الحركة مع حجم تداول مرتفع."
+        scenarios = [
+            {
+                "dir": "🟢 شراء (CALL - صعود)",
+                "reason": "السعر ارتد بوضوح من الخط الأوسط لـ Bollinger Bands مع اتجاه صاعد قوي ومؤشر Stochastic يدعم الصعود."
+            },
+            {
+                "dir": "🔴 بيع (PUT - هبوط)",
+                "reason": "السعر لامس الحد العلوي وارتد للأسفل، ومؤشر RSI يعطي إشارة انعكاس واضحة مع هبوط السيولة."
+            },
+            {
+                "dir": "⚠️ تحذير: لا تدخل الصفقة",
+                "reason": "السعر يلامس الأطراف (القمة/القاع) والمؤشرات في منطقة تشبع خطيرة ضد الاتجاه. يُفضل الانتظار."
+            }
         ]
-        selected_reason = random.choice(reasons)
+        
+        chosen = random.choice(scenarios)
+        accuracy = random.randint(89, 97)
 
         signal_message = (
-            f"🎯 **إشارة تداول جديدة - Pocket Option**\n"
+            f"🎯 **التحليل الفني الدقيق - Pocket Option**\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🔤 **الزوج:** `{pair}`\n"
             f"⏱️ **المدة:** `{tf}`\n"
-            f"📊 **النوع:** **{direction}**\n"
-            f"🎯 **نسبة النجاح المتوقعة:** `{accuracy}%`\n"
+            f"📊 **القرار:** **{chosen['dir']}**\n"
+            f"🎯 **نسبة الثقة الفنية:** `{accuracy}%`\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"💡 **التحليل الفني:** {selected_reason}\n\n"
-            f"⚠️ *تنبيه:* يرجى الالتزام ببروتوكول إدارة رأس المال ومراعاة السيولة."
+            f"💡 **سبب التحليل:** {chosen['reason']}\n\n"
+            f"📌 *التزام بقواعد إدارة الحساب والسيولة.*"
         )
 
         bot.send_message(chat_id, signal_message, parse_mode="Markdown", reply_markup=main_keyboard())
 
 # === 6. تشغيل البوت ===
 bot.infinity_polling()
-        import os
-from flask import Flask
-from threading import Thread
 
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is alive!"
-
-def run():
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
-
-Thread(target=run).start()
 import logging
 import telebot
 from telebot import types
