@@ -141,7 +141,8 @@ def home():
 
 
 def run_flask():
-app.run(host='0.0.0.0', port=10000, debug=False, use_reloader=False)
+  app.run(host='0.0.0.0', port=10000, debug=False, use_reloader=False)
+
 
 if __name__ == '__main__':
   t = threading.Thread(target=run_flask)
@@ -154,4 +155,3 @@ if __name__ == '__main__':
   time.sleep(1)
   bot.infinity_polling(skip_pending=True)
 
-    
