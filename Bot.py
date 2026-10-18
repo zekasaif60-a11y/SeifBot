@@ -1,6 +1,7 @@
 import os
 import random
 import threading
+from datetime import datetime
 from flask import Flask
 import telebot
 from telebot import types
@@ -16,12 +17,13 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-threading.Thread(target=run_flask, daemon=True).start()
+threading.Thread(target=run_flask, daemon=True)
 
-# 2. إعداد التوكن والبوت 
-TOKEN = "8950126151:AAGQFtwHnTCAFMIwtW7v2kcfMCFU-uzRzdg"
+# 2. إعداد التوكين والبوت
+TOKEN = "8950126151:AAGQFtwHnTCAFMIwtW7v2kcfMC..."
 
 bot = telebot.TeleBot(TOKEN)
+
 
 PAIRS = [
     "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)", "AUD/USD (OTC)", 
@@ -103,32 +105,66 @@ def callback_inline(call):
             reply_markup=get_main_keyboard()
         )
 
-    elif call.data == "btn_signal":
-        pair = user_data.get(chat_id, {}).get('pair', PAIRS[0])
-        tf = user_data.get(chat_id, {}).get('tf', "1 دقيقة")
-        
-        bot.send_message(chat_id, "⏳ جاري فحص الشموع وتحليل السوق...")
-        
-        direction = random.choice(["🟢 شراء (CALL)", "🔴 بيع (PUT)"])
-        accuracy = random.randint(90, 98)
-        reason = random.choice(REASONS)
-        
-        signal_msg = (
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📊 **توصية Pocket Option احترافية** 📊\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🔤 **الزوج:** `{pair}`\n"
-            f"⏰ **المدة:** `{tf}`\n"
-            f"🎯 **الاتجاه:** **{direction}**\n"
-            f"📈 **نسبة الثقة:** `{accuracy}%`\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"💡 **التحليل الفني:** {reason}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"⚠️ *التزم بإدارة راس مالك واقتنص الفرص القوية.*"
-        )
-        # يرفق القائمة وزر استخراج إشارة جديدة أسفل التوصية مباشرة
-        bot.send_message(chat_id, signal_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
+    
+elif call.data == "btn_signal":
+    pair = user_data.get(chat_id, {}).get('pair', 'EUR/USD')
+    tf = user_data.get(chat_id, {}).get('tf', '1m')
+    bot.send_message(chat_id, "⏳ Analyzing market data...")
+    
+    import datetime
+    now = datetime.datetime.now()
+    seconds_left = 60 - now.second
 
+    # تجهيز التوصية وتحديد الوقت بالثواني
+    direction = random.choice(["🟢 شراء (CALL)", "🔴 بيع (PUT)"])
+    accuracy = random.randint(90, 98)
+    reason = random.choice(REASONS)
+
+    signal_msg = (
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📊 **توصية Pocket Option احترافية** 📊\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 **الاتجاه:** **{direction}**\n"
+        f"⏰ **المدة:** `{tf}`\n"
+        f"⏱️ **وقت الدخول:** ادخل بعد `{seconds_left}` ثانية (مع بداية الشمعة القادمة)\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🔤 **الزوج:** `{pair}`\n"
+        f"📈 **نسبة الثقة:** `{accuracy}%`\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"💡 **التحليل الفني:** {reason}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🚀 *استعد لتجهيز المنصة والدخول في الإشارة التالية فوراً!*"
+    )
+
+    # إرسال الرسالة مع الأزرار
+     bot.send_message(chat_id, signal_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
+
+import os
+import threading
+from flask import Flask
+
+app = Flask('')
+
+@app.route('/')
+def home():
+    return 'Bot is running!'
+
+def run_flask():
+    app.run(
+        host='0.0.0.0',
+        port=10000,
+        debug=False,
+        use_reloader=False
+    )
+
+if __name__ == '__main__':
+    t = threading.Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+       
+
+import time
+        
 import os
 import threading
 from flask import Flask
