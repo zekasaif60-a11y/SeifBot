@@ -1,12 +1,25 @@
 import os
+import subprocess
+import sys
+
+# 0. تثبيت المكتبات تلقائياً إذا لم تكن مثبتة على المنصة
+try:
+    import pandas as pd
+    import numpy as np
+    import flask
+    import telebot
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "pandas", "numpy", "pyTelegramBotAPI", "Flask"])
+    import pandas as pd
+    import numpy as np
+    import flask
+    import telebot
+
 import random
 import threading
 import time
 from flask import Flask
-import telebot
 from telebot import types
-import pandas as pd
-import numpy as np
 
 # 1. إعداد خادم Flask للـ Keep-alive
 app = Flask(__name__)
