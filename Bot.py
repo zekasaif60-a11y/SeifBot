@@ -18,8 +18,9 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# 2. إعداد التوكن والبوت
-TOKEN = "8900876880:AAHGQyZ_yd8j9MNubKzJ_p6RRg9j5EVcb_4"
+# 2. إعداد التوكن والبوت 
+TOKEN = "8950126151:AAGQFtwHnTCAFMIwtW7v2kcfMCFU-uzRzdg"
+
 bot = telebot.TeleBot(TOKEN)
 
 PAIRS = [
