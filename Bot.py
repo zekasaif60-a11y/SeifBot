@@ -1,12 +1,13 @@
 import os
 import random
 import threading
+import time
 from datetime import datetime
 from flask import Flask
 import telebot
 from telebot import types
 
-# 1. خادم Flask للـ Keep-alive
+# 1. إعداد خادم Flask للـ Keep-alive
 app = Flask(__name__)
 
 @app.route('/')
@@ -17,10 +18,8 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
-threading.Thread(target=run_flask, daemon=True).start()
-
 # 2. إعداد التوكين والبوت
-TOKEN = "8950126151:AAGQFtwHnTCAFMIwtW7v2kcfMC..."  # استبدل هذا بتوكين بوتك كاملاً إذا لم يكن مكتملاً
+TOKEN = "8950126151:AAGQFtwHnTCAFMIwtW7v2kcfMC..."  # تأكد من وضع توكينك كاملاً
 bot = telebot.TeleBot(TOKEN)
 
 PAIRS = [
@@ -43,22 +42,25 @@ user_data = {}
 
 def get_main_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
-    itembtn1 = types.InlineKeyboardButton("📊 الحصول على إشارة", callback_data="get_signal")
-    markup.add(itembtn1)
+    btn_pairs = types.InlineKeyboardButton("📊 اختر الزوج", callback_data="btn_pairs")
+    btn_tf = types.InlineKeyboardButton("⏱️ الفريم الزمني", callback_data="btn_tf")
+    btn_signal = types.InlineKeyboardButton("🎯 استخراج إشارة", callback_data="btn_signal")
+    markup.add(btn_pairs, btn_tf)
+    markup.add(btn_signal)
     return markup
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "أهلاً بك في بوت إشارات Pocket Option!", reply_markup=get_main_keyboard())
-
-
-
-
+    welcome_text = (
+        f"أهلاً بك يا زكريا في بوت Pocket Option لتداول SeifBot! 👋\n"
+        f"قم باختيار الزوج والفريم المفضل لديك، ثم اضغط على 'استخراج إشارة الآن' ⚡"
+    )
+    bot.reply_to(message, welcome_text, reply_markup=get_main_keyboard())
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
     chat_id = call.message.chat.id
-    
+
     if call.data == "btn_pairs":
         markup = types.InlineKeyboardMarkup(row_width=2)
         for pair in PAIRS:
@@ -69,89 +71,38 @@ def callback_inline(call):
         selected_pair = call.data.replace("pair_", "")
         user_data[chat_id] = user_data.get(chat_id, {})
         user_data[chat_id]['pair'] = selected_pair
-        
-        # يبعتلك زر الاستخراج تحت أيدك مباشرة
-        bot.send_message(
-            chat_id, 
-            f"✅ تم اختيار الزوج: *{selected_pair}*\nاضغط أدناه لاستخراج الإشارة:", 
-            parse_mode="Markdown",
-            reply_markup=get_main_keyboard()
-        )
+        bot.send_message(chat_id, f"✅ تم اختيار الزوج: {selected_pair}", reply_markup=get_main_keyboard())
 
     elif call.data == "btn_tf":
         markup = types.InlineKeyboardMarkup(row_width=2)
         for tf in TIMEFRAMES:
             markup.add(types.InlineKeyboardButton(tf, callback_data=f"tf_{tf}"))
-        bot.send_message(chat_id, "⏱️ اختر مدة الصَفقة:", reply_markup=markup)
+        bot.send_message(chat_id, "⏱️ اختر الفريم الزمني للصفقة:", reply_markup=markup)
 
     elif call.data.startswith("tf_"):
         selected_tf = call.data.replace("tf_", "")
         user_data[chat_id] = user_data.get(chat_id, {})
         user_data[chat_id]['tf'] = selected_tf
-        
-        # يبعتلك زر الاستخراج تحت أيدك مباشرة
-        bot.send_message(
-            chat_id, 
-            f"✅ تم اختيار المدة: *{selected_tf}*\nاضغط أدناه لاستخراج الإشارة:", 
-            parse_mode="Markdown",
-            reply_markup=get_main_keyboard()
+        bot.send_message(chat_id, f"✅ تم اختيار الفريم: {selected_tf}", reply_markup=get_main_keyboard())
+
+    elif call.data == "btn_signal":
+        data = user_data.get(chat_id, {})
+        pair = data.get('pair', random.choice(PAIRS))
+        tf = data.get('tf', random.choice(TIMEFRAMES))
+        action = random.choice(["🟢 شراء (CALL)", "🔴 بيع (PUT)"])
+        reason = random.choice(REASONS)
+
+        signal_msg = (
+            f"🚨 **إشارة تداول جديدة** 🚨\n\n"
+            f"📈 **الزوج:** {pair}\n"
+            f"⏳ **المدة:** {tf}\n"
+            f"📊 **النوع:** {action}\n"
+            f"💡 **السبب الفني:** {reason}\n\n"
+            f"⚠️ *تأكد من إدارة رأس المال جيداً قبل الدخول!*"
         )
+        bot.send_message(chat_id, signal_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
-    
-             if call.data == "btn_signal":
-        pair = user_data.get(chat_id, {}).get('pair', 'EUR/USD')
-        tf = user_data.get(chat_id, {}).get('tf', '1m')
-        bot.send_message(chat_id, "⏳ Analyzing market data...")
-
- 
-    import datetime
-    now = datetime.datetime.now()
-    seconds_left = 60 - now.second
-
-    # تجهيز التوصية وتحديد الوقت بالثواني
-    direction = random.choice(["🟢 شراء (CALL)", "🔴 بيع (PUT)"])
-    accuracy = random.randint(90, 98)
-    reason = random.choice(REASONS)
-
-    signal_msg = (
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"📊 **توصية Pocket Option احترافية** 📊\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🎯 **الاتجاه:** **{direction}**\n"
-        f"⏰ **المدة:** `{tf}`\n"
-        f"⏱️ **وقت الدخول:** ادخل بعد `{seconds_left}` ثانية (مع بداية الشمعة القادمة)\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🔤 **الزوج:** `{pair}`\n"
-        f"📈 **نسبة الثقة:** `{accuracy}%`\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"💡 **التحليل الفني:** {reason}\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🚀 *استعد لتجهيز المنصة والدخول في الإشارة التالية فوراً!*"
-    )
-
-    # إرسال الرسالة مع الأزرار
-     bot.send_message(chat_id, signal_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
-
-import os
-import threading
-import time
-from flask import Flask
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return 'Bot is running!'
-
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(
-        host='0.0.0.0',
-        port=port,
-        debug=False,
-        use_reloader=False
-    )
-
+# 3. التشغيل في نهاية الملف
 if __name__ == '__main__':
     t = threading.Thread(target=run_flask)
     t.daemon = True
@@ -160,3 +111,4 @@ if __name__ == '__main__':
     bot.remove_webhook()
     time.sleep(1)
     bot.infinity_polling(skip_pending=True)
+
