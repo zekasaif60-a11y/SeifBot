@@ -135,4 +135,3 @@ bot.remove_webhook()
 time.sleep(1)
 
 bot.infinity_polling(skip_pending_updates=)
-
