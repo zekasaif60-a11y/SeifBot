@@ -6,7 +6,7 @@ from flask import Flask
 import telebot
 from telebot import types
 
-# 1. خادم Flask الوهمي
+# 1. خادم Flask للـ Keep-alive
 app = Flask(__name__)
 
 @app.route('/')
@@ -14,54 +14,46 @@ def home():
     return "Bot is running 24/7!"
 
 def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
-threading.Thread(target=run_flask, daemon=True)
+threading.Thread(target=run_flask, daemon=True).start()
 
 # 2. إعداد التوكين والبوت
-TOKEN = "8950126151:AAGQFtwHnTCAFMIwtW7v2kcfMC..."
-
+TOKEN = "8950126151:AAGQFtwHnTCAFMIwtW7v2kcfMC..."  # استبدل هذا بتوكين بوتك كاملاً إذا لم يكن مكتملاً
 bot = telebot.TeleBot(TOKEN)
 
-
 PAIRS = [
-    "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)", "AUD/USD (OTC)", 
+    "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)",
     "USD/CHF (OTC)", "USD/CAD (OTC)", "NZD/USD (OTC)",
-    "EUR/GBP (OTC)", "EUR/JPY (OTC)", "EUR/AUD (OTC)", "EUR/CAD (OTC)", 
-    "EUR/NZD (OTC)", "GBP/JPY (OTC)", "GBP/AUD (OTC)", "GBP/CAD (OTC)", 
-    "GBP/NZD (OTC)", "AUD/JPY (OTC)", "AUD/CAD (OTC)", "AUD/NZD (OTC)", 
-    "CAD/JPY (OTC)", "CHF/JPY (OTC)", "NZD/JPY (OTC)",
-    "Gold / الذهب (OTC)", "Silver / الفضة (OTC)", "UK Brent (OTC)", "US Crude (OTC)",
-    "Bitcoin / بتكوين (OTC)", "Ethereum / إيثريوم (OTC)", "Ripple / ريبل (OTC)"
+    "EUR/GBP (OTC)", "EUR/JPY (OTC)", "EUR/AUD (OTC)",
+    "EUR/NZD (OTC)", "GBP/JPY (OTC)", "GBP/AUD (OTC)",
+    "GBP/NZD (OTC)", "AUD/JPY (OTC)", "AUD/CAD (OTC)"
 ]
 
-TIMEFRAMES = ["30 ثانية", "1 دقيقة", "2 دقيقة", "3 دقائق", "5 دقائق"]
+TIMEFRAMES = ["دقيقة واحدة", "2 دقيقة", "3 دقائق", "5 دقائق"]
 
 REASONS = [
-    "ارتداد قوي من خط المنتصف في مؤشر Bollinger Bands مع اتجاه واضح.",
-    "تقاطع مؤشر RSI ومؤشر Stochastic في مناطق التشبع.",
-    "تأكيد حركة الشموع مع وجود سيولة مناسبة وتغير الاتجاه."
+    "ارتداد قوي من خط المنتصف في مؤشر Bollinger Bands",
+    "تقاطع مؤشر RSI ومؤشر Stochastic في مناطق التشبع",
+    "تأكيد حركة الشموع مع وجود سيولة مناسبة وتغير الاتجاه"
 ]
 
 user_data = {}
 
 def get_main_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_pairs = types.InlineKeyboardButton("📊 اختر الزوج", callback_data="btn_pairs")
-    btn_tf = types.InlineKeyboardButton("⏱️ الفريم الزمني", callback_data="btn_tf")
-    btn_signal = types.InlineKeyboardButton("🎯 استخراج إشارة الآن", callback_data="btn_signal")
-    markup.add(btn_pairs, btn_tf)
-    markup.add(btn_signal)
+    itembtn1 = types.InlineKeyboardButton("📊 الحصول على إشارة", callback_data="get_signal")
+    markup.add(itembtn1)
     return markup
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    welcome_text = (
-        f"👋 أهلاً بك يا زكريا في بوت Seif لتداول Pocket Option!\n\n"
-        "⚡ اختر الزوج والفريم المفضل لديك، ثم اضغط على 'استخراج إشارة الآن'."
-    )
-    bot.reply_to(message, welcome_text, reply_markup=get_main_keyboard())
+    bot.reply_to(message, "أهلاً بك في بوت إشارات Pocket Option!", reply_markup=get_main_keyboard())
+
+
+
+
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
@@ -142,18 +134,20 @@ def callback_inline(call):
 
 import os
 import threading
+import time
 from flask import Flask
 
-app = Flask('')
+app = Flask(__name__)
 
 @app.route('/')
 def home():
     return 'Bot is running!'
 
 def run_flask():
+    port = int(os.environ.get("PORT", 8080))
     app.run(
         host='0.0.0.0',
-        port=8080,
+        port=port,
         debug=False,
         use_reloader=False
     )
@@ -163,9 +157,6 @@ if __name__ == '__main__':
     t.daemon = True
     t.start()
 
-
-  import time
-
-  bot.remove_webhook()
-  time.sleep(1)
-  bot.infinity_polling(skip_pending=True)
+    bot.remove_webhook()
+    time.sleep(1)
+    bot.infinity_polling(skip_pending=True)
