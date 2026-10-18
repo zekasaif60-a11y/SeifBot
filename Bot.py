@@ -128,9 +128,30 @@ def callback_inline(call):
         # يرفق القائمة وزر استخراج إشارة جديدة أسفل التوصية مباشرة
         bot.send_message(chat_id, signal_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
+import os
+import threading
+from flask import Flask
+
+app = Flask('')
+
+
+@app.route('/')
+def home():
+  return 'Bot is running!'
+
+
+def run_flask():
+app.run(host='0.0.0.0', port=10000, debug=False, use_reloader=False)
+
 if __name__ == '__main__':
-    import time
-    bot.remove_webhook()
-    time.sleep(1)
-    bot.infinity_polling(skip_pending=True)
+  t = threading.Thread(target=run_flask)
+  t.daemon = True
+  t.start()
+
+  import time
+
+  bot.remove_webhook()
+  time.sleep(1)
+  bot.infinity_polling(skip_pending=True)
+
     
