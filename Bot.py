@@ -106,12 +106,12 @@ def callback_inline(call):
         )
 
     
-    if call.data == "btn_signal":
+             if call.data == "btn_signal":
+        pair = user_data.get(chat_id, {}).get('pair', 'EUR/USD')
+        tf = user_data.get(chat_id, {}).get('tf', '1m')
+        bot.send_message(chat_id, "⏳ Analyzing market data...")
 
-    pair = user_data.get(chat_id, {}).get('pair', 'EUR/USD')
-    tf = user_data.get(chat_id, {}).get('tf', '1m')
-    bot.send_message(chat_id, "⏳ Analyzing market data...")
-    
+ 
     import datetime
     now = datetime.datetime.now()
     seconds_left = 60 - now.second
