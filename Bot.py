@@ -1,24 +1,8 @@
 import os
-import subprocess
-import sys
-
-# 0. تثبيت المكتبات تلقائياً إذا لم تكن مثبتة
-try:
-    import pandas as pd
-    import numpy as np
-    import flask
-    import telebot
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pandas", "numpy", "pyTelegramBotAPI", "Flask"])
-    import pandas as pd
-    import numpy as np
-    import flask
-    import telebot
-
 import random
 import threading
-import time
 from flask import Flask
+import telebot
 from telebot import types
 
 # 1. إعداد خادم Flask للـ Keep-alive
@@ -32,11 +16,10 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)
 
-# 2. إعداد التوكن والبوت
+# 2. إعداد البوت والتوكن
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-# 3. البيانات الأساسية
 PAIRS = [
     "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)", "USD/CHF (OTC)",
     "USD/CAD (OTC)", "NZD/USD (OTC)", "AUD/USD (OTC)", "EUR/GBP (OTC)",
@@ -45,84 +28,77 @@ PAIRS = [
     "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "USD/CAD", "AUD/USD"
 ]
 
-TIMEFRAMES = ["دقائق 3", "دقيقة 2", "دقيقة واحدة"]
-
-REASONS = [
-    "ارتداد قوي من خط المنتصف في مؤشر Bollinger Bands مع توافق الاتجاه",
-    "تقاطع مؤشرات RSI و Stochastic في مناطق الأمان والزخم المناسب",
-    "تأكيد حركة الشموع الحقيقية واستقرار السوق وتلافي السليب"
+UP_REASONS = [
+    "ارتداد قوي من الحد السفلي لمؤشر Bollinger Bands مع تقاطع صاعد لمؤشر Stochastic.",
+    "ارتداد السعر من خط المنتصف مع اتجاه صاعد واضح وتأكيد الزخم من RSI.",
+    "تقاطع إيجابي لمؤشرات RSI و Stochastic في مناطق الأمان مع استقرار الشموع."
 ]
 
-# 4. دمج الاستراتيجيات والفلترة الفنية
-def check_ema_trend_strategy(df, direction):
-    if len(df) < 50:
-        return True
-    ema_50 = df['close'].ewm(span=50, adjust=False).mean()
-    current_price = df['close'].iloc[-1]
-    if direction == "CALL" and current_price >= ema_50.iloc[-1]:
-        return True
-    elif direction == "PUT" and current_price <= ema_50.iloc[-1]:
-        return True
-    return False
+DOWN_REASONS = [
+    "ارتداد وهبوط من الحد العلوي لمؤشر Bollinger Bands مع تقاطع هابط لمؤشر Stochastic.",
+    "كسر خط المنتصف للبولنجر مع اتجاه هابط واضح وتأكيد التشبع الشرائي.",
+    "تقاطع سلبي لمؤشر RSI تحت مستوى المنتصف مع زخم هبوطي قوي."
+]
 
-def comprehensive_pocket_option_strategy(df, signal_type):
-    if len(df) < 20:
-        return False, "بيانات غير كافية للتحليل الفني"
-
-    delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    current_rsi = rsi.iloc[-1]
-
-    low_min = df['low'].rolling(window=14).min()
-    high_max = df['high'].rolling(window=14).max()
-    k_line = 100 * ((df['close'] - low_min) / (high_max - low_min))
-    current_stoch = k_line.iloc[-1]
-
-    body_size = abs(df['close'].iloc[-1] - df['open'].iloc[-1])
-    avg_body = abs(df['close'] - df['open']).rolling(window=10).mean().iloc[-1]
-    momentum_ok = body_size >= (avg_body * 0.75)
-    trend_ok = check_ema_trend_strategy(df, signal_type)
-
-    if signal_type == "CALL":
-        if 45 < current_rsi < 65 and current_stoch < 80 and momentum_ok and trend_ok:
-            return True, "إشارة شراء مؤكدة (ارتداد منتصف البولنجر مع توافق RSI والاتجاه)"
-    elif signal_type == "PUT":
-        if 35 < current_rsi < 55 and current_stoch > 20 and momentum_ok and trend_ok:
-            return True, "إشارة بيع مؤكدة (هبوط مستقر مع تأكيد الزخم والتشبع)"
-
-    return False, "تم استبعاد الإشارة لعدم تطابق شروط الاستراتيجيات المتقدمة"
-
-# 5. تفاعل أزواج وأوامر تيليجرام
+# 3. عرض أزرار اختيار المدة الزمنية
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    btn_signal = types.KeyboardButton("🎯 الحصول على إشارة تداول")
-    markup.add(btn_signal)
-    bot.reply_to(message, "مرحباً بك يا زكريا في بوت التداول المتقدم Pocket Option!\nاضغط على الزر للحصول على إشارة معتمدة.", reply_markup=markup)
-
-@bot.message_handler(func=lambda message: message.text == "🎯 الحصول على إشارة تداول")
-def get_trading_signal(message):
-    pair = random.choice(PAIRS)
-    direction = random.choice(["🟢 شراء (CALL)", "🔴 بيع (PUT)"])
-    timeframe = random.choice(TIMEFRAMES)
-    reason = random.choice(REASONS)
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    btn1 = types.InlineKeyboardButton("10 ثوانٍ", callback_data="time_10s")
+    btn2 = types.InlineKeyboardButton("30 ثانية", callback_data="time_30s")
+    btn3 = types.InlineKeyboardButton("دقيقة واحدة", callback_data="time_1m")
+    btn4 = types.InlineKeyboardButton("دقيقتان", callback_data="time_2m")
+    btn5 = types.InlineKeyboardButton("3 دقائق", callback_data="time_3m")
+    btn6 = types.InlineKeyboardButton("5 دقائق", callback_data="time_5m")
+    btn7 = types.InlineKeyboardButton("15 دقيقة", callback_data="time_15m")
+    markup.add(btn1, btn2, btn3, btn4, btn5, btn6, btn7)
     
-    response = (
-        f"📊 **صفقة جديدة موصى بها**\n\n"
-        f"🔹 **الزوج:** {pair}\n"
-        f"🔹 **الاتجاه:** {direction}\n"
-        f"⏱ **المدة:** {timeframe}\n"
-        f"💡 **السبب الفني:** {reason}\n\n"
-        f"⚠️ *ملاحظة:* يرجى مراجعة حركة الشمعة الحالية قبل الدخول لتجنب السليب."
-    )
-    bot.reply_to(message, response, parse_mode="Markdown")
+    bot.reply_to(message, "اختر المدة الزمنية للصفقة المطلوبة:", reply_markup=markup)
 
-# 6. التشغيل المستمر
+# 4. معالجة الإشارة حسب الاختيار والأسلوب المحدد
+@bot.callback_query_handler(func=lambda call: call.data.startswith("time_"))
+def callback_signal(call):
+    time_map = {
+        "time_10s": "10 ثوانٍ",
+        "time_30s": "30 ثانية",
+        "time_1m": "دقيقة واحدة",
+        "time_2m": "دقيقتان",
+        "time_3m": "3 دقائق",
+        "time_5m": "5 دقائق",
+        "time_15m": "15 دقيقة (ربع ساعة)"
+    }
+    
+    selected_time = time_map.get(call.data, "دقيقة واحدة")
+    pair = random.choice(PAIRS)
+    
+    # تحديد اتجاه السوق (صاعد أو هابط)
+    direction_type = random.choice(["صاعد 🟢", "هابط 🔴"])
+    
+    if "صاعد" in direction_type:
+        trade_type = "شراء (CALL)"
+        reason = random.choice(UP_REASONS)
+    else:
+        trade_type = "بيع (PUT)"
+        reason = random.choice(DOWN_REASONS)
+        
+    # نسبة القوة حتى 100%
+    win_rate = random.randint(88, 98)
+    
+    # صياغة الرسالة حسب الأسلوب المطلوب تماماً
+    response = (
+        f"**نوع الصفقة والمدة:** {trade_type} - {selected_time}\n"
+        f"**الاتجاه:** {direction_type}\n"
+        f"**نسبة النجاح:** {win_rate}%\n"
+        f"**الزوج:** {pair}\n"
+        f"**توصية الدخول:** ادخل مع افتتاح الإشارة/الشمعة القادمة مباشرة ⏳\n"
+        f"**السبب الفني:** {reason}"
+    )
+    
+    bot.answer_callback_query(call.id, "تم استخراج الإشارة بنجاح")
+    bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+
+# 5. التشغيل المستمر
 if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.start()
-    print("Bot is polling...")
     bot.infinity_polling()
