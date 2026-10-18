@@ -2,7 +2,6 @@ import os
 import random
 import threading
 import time
-from datetime import datetime
 from flask import Flask
 import telebot
 from telebot import types
@@ -21,7 +20,6 @@ def run_flask():
 # 2. إعداد التوكين والبوت
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
-
 
 PAIRS = [
     "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)",
