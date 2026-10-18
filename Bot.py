@@ -17,7 +17,7 @@ def run_flask():
     app.run(host="0.0.0.0", port=port, debug=False)
 
 # 2. إعداد البوت والتونكن
-TOKEN = "اكتب_توكن_البوت_هنا_بين_العلامات"
+TOKEN = "8950126151:AAGQFtwHnTCAFMIwtW7v2kcfMCFU-uzRzdg"
 bot = telebot.TeleBot(TOKEN)
 
 # قائمة شاملة لأشهر أزواج بوكت أوشن العادية و OTC والسلع
