@@ -15,7 +15,7 @@ def home():
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, debug=False)
 
 # 2. إعداد التوكين والبوت
 TOKEN = os.environ.get("BOT_TOKEN")
