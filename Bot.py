@@ -153,7 +153,7 @@ def home():
 def run_flask():
     app.run(
         host='0.0.0.0',
-        port=10000,
+        port=8080,
         debug=False,
         use_reloader=False
     )
@@ -162,35 +162,7 @@ if __name__ == '__main__':
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
-       
 
-import time
-        
-import os
-import threading
-from flask import Flask
-
-app = Flask('')
-
-
-@app.route('/')
-def home():
-  return 'Bot is running!'
-
-
-def run_flask():
-  app.run(
-      host='0.0.0.0',
-      port=10000,
-      debug=False,
-      use_reloader=False,
-  )
-
-
-if __name__ == '__main__':
-  t = threading.Thread(target=run_flask)
-  t.daemon = True
-  t.start()
 
   import time
 
