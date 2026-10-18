@@ -129,4 +129,10 @@ def callback_inline(call):
         bot.send_message(chat_id, signal_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
 if __name__ == '__main__':
-    bot.infinity_polling()
+    import time
+
+bot.remove_webhook()
+time.sleep(1)
+
+bot.infinity_polling(skip_pending_updates=True)
+
