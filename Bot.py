@@ -134,4 +134,4 @@ if __name__ == '__main__':
 bot.remove_webhook()
 time.sleep(1)
 
-bot.infinity_polling(skip_pending_updates=)
+bot.infinity_polling(bot.infinity_polling()=)
