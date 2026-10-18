@@ -5,6 +5,8 @@ import time
 from flask import Flask
 import telebot
 from telebot import types
+import pandas as pd
+import numpy as np
 
 # 1. إعداد خادم Flask للـ Keep-alive
 app = Flask(__name__)
@@ -17,97 +19,90 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)
 
-# 2. إعداد التوكين والبوت
+# 2. إعداد التوكن والبوت
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
+# 3. قائمة أزواج بوكت أوبشن الشاملة (عادية و OTC)
 PAIRS = [
-    "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)",
-    "USD/CHF (OTC)", "USD/CAD (OTC)", "NZD/USD (OTC)",
-    "EUR/GBP (OTC)", "EUR/JPY (OTC)", "EUR/AUD (OTC)",
-    "EUR/NZD (OTC)", "GBP/JPY (OTC)", "GBP/AUD (OTC)",
-    "GBP/NZD (OTC)", "AUD/JPY (OTC)", "AUD/CAD (OTC)"
+    "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)", "USD/CHF (OTC)",
+    "USD/CAD (OTC)", "NZD/USD (OTC)", "AUD/USD (OTC)", "EUR/GBP (OTC)",
+    "EUR/JPY (OTC)", "EUR/AUD (OTC)", "EUR/NZD (OTC)", "GBP/JPY (OTC)",
+    "GBP/AUD (OTC)", "GBP/NZD (OTC)", "AUD/JPY (OTC)", "AUD/CAD (OTC)",
+    "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "USD/CAD", "AUD/USD"
 ]
 
-TIMEFRAMES = ["دقيقة واحدة", "2 دقيقة", "3 دقائق", "5 دقائق"]
+TIMEFRAMES = ["دقائق 3", "دقيقة 2", "دقيقة واحدة"]
 
 REASONS = [
-    "ارتداد قوي من خط المنتصف في مؤشر Bollinger Bands",
-    "تقاطع مؤشر RSI ومؤشر Stochastic في مناطق التشبع",
-    "تأكيد حركة الشموع مع وجود سيولة مناسبة وتغير الاتجاه"
+    "ارتداد قوي من خط المنتصف في مؤشر Bollinger Bands مع توافق الاتجاه",
+    "تقاطع مؤشرات RSI و Stochastic في مناطق الأمان والزخم المناسب",
+    "تأكيد حركة الشموع الحقيقية واستقرار السوق وتلافي السليب"
 ]
 
-user_data = {}
+# ==========================================
+# 4. دمج كافة استراتيجيات التحليل والفلترة الخوارزمية
+# ==========================================
 
-def get_main_keyboard():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_pairs = types.InlineKeyboardButton("📊 اختر الزوج", callback_data="btn_pairs")
-    btn_tf = types.InlineKeyboardButton("⏱️ الفريم الزمني", callback_data="btn_tf")
-    btn_signal = types.InlineKeyboardButton("🎯 استخراج إشارة", callback_data="btn_signal")
-    markup.add(btn_pairs, btn_tf)
-    markup.add(btn_signal)
-    return markup
+def check_ema_trend_strategy(df, direction):
+    """
+    استراتيجية المتوسط المتحرك الأسي (EMA 50) لتحديد الاتجاه العام وضمان عدم عكسه.
+    """
+    if len(df) < 50:
+        return True
+    ema_50 = df['close'].ewm(span=50, adjust=False).mean()
+    current_price = df['close'].iloc[-1]
+    
+    if direction == "CALL" and current_price >= ema_50.iloc[-1]:
+        return True
+    elif direction == "PUT" and current_price <= ema_50.iloc[-1]:
+        return True
+    return False
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    welcome_text = (
-        f"أهلاً بك يا زكريا في بوت Pocket Option لتداول SeifBot! 👋\n"
-        f"قم باختيار الزوج والفريم المفضل لديك، ثم اضغط على 'استخراج إشارة الآن' ⚡"
-    )
-    bot.reply_to(message, welcome_text, reply_markup=get_main_keyboard())
+def comprehensive_pocket_option_strategy(df, signal_type):
+    """
+    الخوارزمية الشاملة التي تدمج (Bollinger Bands + RSI + Stochastic + Momentum + Slippage)
+    """
+    if len(df) < 20:
+        return False, "بيانات غير كافية للتحليل الفني"
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_inline(call):
-    chat_id = call.message.chat.id
+    # حساب مؤشر RSI
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    current_rsi = rsi.iloc[-1]
 
-    if call.data == "btn_pairs":
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        for pair in PAIRS:
-            markup.add(types.InlineKeyboardButton(pair, callback_data=f"pair_{pair}"))
-        bot.send_message(chat_id, "📌 اختر الزوج المناسب من منصة Pocket Option:", reply_markup=markup)
+    # حساب مؤشر Stochastic المبسط
+    low_min = df['low'].rolling(window=14).min()
+    high_max = df['high'].rolling(window=14).max()
+    k_line = 100 * ((df['close'] - low_min) / (high_max - low_min))
+    current_stoch = k_line.iloc[-1]
 
-    elif call.data.startswith("pair_"):
-        selected_pair = call.data.replace("pair_", "")
-        user_data[chat_id] = user_data.get(chat_id, {})
-        user_data[chat_id]['pair'] = selected_pair
-        bot.send_message(chat_id, f"✅ تم اختيار الزوج: {selected_pair}", reply_markup=get_main_keyboard())
+    # فلتر حماية الانزلاق السعري (Slippage) والزخم الحقيقي للشمعة
+    body_size = abs(df['close'].iloc[-1] - df['open'].iloc[-1])
+    avg_body = abs(df['close'] - df['open']).rolling(window=10).mean().iloc[-1]
+    momentum_ok = body_size >= (avg_body * 0.75)
 
-    elif call.data == "btn_tf":
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        for tf in TIMEFRAMES:
-            markup.add(types.InlineKeyboardButton(tf, callback_data=f"tf_{tf}"))
-        bot.send_message(chat_id, "⏱️ اختر الفريم الزمني للصفقة:", reply_markup=markup)
+    # فحص استراتيجية الاتجاه (EMA)
+    trend_ok = check_ema_trend_strategy(df, signal_type)
 
-    elif call.data.startswith("tf_"):
-        selected_tf = call.data.replace("tf_", "")
-        user_data[chat_id] = user_data.get(chat_id, {})
-        user_data[chat_id]['tf'] = selected_tf
-        bot.send_message(chat_id, f"✅ تم اختيار الفريم: {selected_tf}", reply_markup=get_main_keyboard())
+    # شروط تنفيذ صفقة الشراء (CALL)
+    if signal_type == "CALL":
+        if 45 < current_rsi < 65 and current_stoch < 80 and momentum_ok and trend_ok:
+            return True, "إشارة شراء مؤكدة (ارتداد منتصف البولنجر مع توافق RSI والاتجاه)"
+            
+    # شروط تنفيذ صفقة البيع (PUT)
+    elif signal_type == "PUT":
+        if 35 < current_rsi < 55 and current_stoch > 20 and momentum_ok and trend_ok:
+            return True, "إشارة بيع مؤكدة (هبوط مستقر مع تأكيد الزخم والتشبع)"
 
-    elif call.data == "btn_signal":
-        data = user_data.get(chat_id, {})
-        pair = data.get('pair', random.choice(PAIRS))
-        tf = data.get('tf', random.choice(TIMEFRAMES))
-        action = random.choice(["🟢 شراء (CALL)", "🔴 بيع (PUT)"])
-        reason = random.choice(REASONS)
+    return False, "تم استبعاد الإشارة لعدم تطابق شروط الاستراتيجيات المتقدمة"
 
-        signal_msg = (
-            f"🚨 **إشارة تداول جديدة** 🚨\n\n"
-            f"📈 **الزوج:** {pair}\n"
-            f"⏳ **المدة:** {tf}\n"
-            f"📊 **النوع:** {action}\n"
-            f"💡 **السبب الفني:** {reason}\n\n"
-            f"⚠️ *تأكد من إدارة رأس المال جيداً قبل الدخول!*"
-        )
-        bot.send_message(chat_id, signal_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
-
-# 3. التشغيل في نهاية الملف
+# 5. تشغيل خادم Flask وبدء تشغيل البوت
 if __name__ == '__main__':
-    t = threading.Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-
-    bot.remove_webhook()
-    time.sleep(1)
-    bot.infinity_polling(skip_pending=True)
-
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+    print("Bot and Flask server are starting...")
+    bot.infinity_polling()
