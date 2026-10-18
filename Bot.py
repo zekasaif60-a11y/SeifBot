@@ -106,7 +106,8 @@ def callback_inline(call):
         )
 
     
-elif call.data == "btn_signal":
+    if call.data == "btn_signal":
+
     pair = user_data.get(chat_id, {}).get('pair', 'EUR/USD')
     tf = user_data.get(chat_id, {}).get('tf', '1m')
     bot.send_message(chat_id, "⏳ Analyzing market data...")
