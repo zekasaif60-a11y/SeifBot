@@ -19,8 +19,9 @@ def run_flask():
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 # 2. إعداد التوكين والبوت
-TOKEN = "8950126151:AAGQFtwHnTCAFMIwtW7v2kcfMC..."  # تأكد من وضع توكينك كاملاً
+TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
+
 
 PAIRS = [
     "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)",
