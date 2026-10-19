@@ -67,4 +67,151 @@ PAIRS = {
     "USD/RUB (OTC)": "USDRUB=X",
     "USD/TRY (OTC)": "USDTRY=X",
     "USD/BRL (OTC)": "USDBRL=X",
-    "USD/INR
+    "USD/INR (OTC)": "USDINR=X",
+    "USD/PKR (OTC)": "USDPKR=X"
+}
+
+# ==========================================
+# 3. دالة التحليل الفني بالأسلوب الجديد
+# ==========================================
+def analyze_pair(ticker_symbol):
+    try:
+        data = yf.download(tickers=ticker_symbol, period="1d", interval="1m", progress=False)
+        if data.empty or len(data) < 20:
+            return "WAIT", 50, "بيانات السوق غير كافية حالياً."
+
+        df = data.copy()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        # حساب البولنجر باند (Bollinger Bands)
+        df['SMA20'] = df['Close'].rolling(window=20).mean()
+        df['STD20'] = df['Close'].rolling(window=20).std()
+        df['Upper'] = df['SMA20'] + (df['STD20'] * 2)
+        df['Lower'] = df['SMA20'] - (df['STD20'] * 2)
+
+        # حساب RSI
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['RSI'] = 100 - (100 / (1 + rs))
+
+        # حساب Stochastic
+        low_min = df['Low'].rolling(window=14).min()
+        high_max = df['High'].rolling(window=14).max()
+        df['Stoch_K'] = 100 * ((df['Close'] - low_min) / (high_max - low_min))
+        df['Stoch_D'] = df['Stoch_K'].rolling(window=3).mean()
+
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        close_price = last['Close']
+        sma_price = last['SMA20']
+        rsi_val = last['RSI']
+        stoch_k = last['Stoch_K']
+        stoch_d = last['Stoch_D']
+
+        # قاعدة عدم الدخول: ملامسة أطراف البولنجر
+        if close_price >= last['Upper'] or close_price <= last['Lower']:
+            return "WAIT", 50, "السعر يتواجد عند أطراف البولنجر، يُنصح بعدم الدخول."
+
+        # قاعدة عدم الدخول: المؤشرات عند مناطق التشبع
+        if rsi_val >= 70 or rsi_val <= 30:
+            return "WAIT", 50, "المؤشرات في مناطق تشبع (السوق سيئ، لا تدخل عكس الاتجاه)."
+
+        # صفقة شراء (CALL / BUY)
+        if prev['Close'] <= prev['SMA20'] and close_price > sma_price:
+            if stoch_k > stoch_d and rsi_val > 50:
+                return "BUY", 94, "ارتداد إيجابي صاعد من الخط الأوسط مع تقاطع إيجابي لمؤشري RSI و Stochastic."
+
+        # صفقة بيع (PUT / SELL)
+        if prev['Close'] >= prev['SMA20'] and close_price < sma_price:
+            if stoch_k < stoch_d and rsi_val < 50:
+                return "SELL", 91, "ارتداد سلبي هابط من الخط الأوسط مع تقاطع سلبي لمؤشري RSI و Stochastic."
+
+        return "WAIT", 50, "الاتجاه غير مكتمل حالياً، انتظر فرصة أقوى."
+
+    except Exception as e:
+        return "WAIT", 50, f"خطأ في التحليل: {str(e)}"
+
+# ==========================================
+# 4. واجهة أزرار تليجرام وأوامر البوت
+# ==========================================
+def get_main_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    buttons = [types.InlineKeyboardButton(text=pair, callback_data=f"select_{pair}") for pair in PAIRS.keys()]
+    markup.add(*buttons)
+    return markup
+
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    welcome_text = "📊 **توصية Pocket Option احترافية** 📊\n\nاختر زوج العملات للبدء في الفحص والتحليل:"
+    bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_main_keyboard())
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("select_"))
+def handle_pair_selection(call):
+    pair_name = call.data.replace("select_", "")
+    ticker = PAIRS.get(pair_name)
+
+    bot.answer_callback_query(call.id, text=f"جاري فحص السوق لـ {pair_name}...")
+    bot.send_message(call.message.chat.id, f"⏳ **جاري فحص الشموع وتحليل السوق لـ {pair_name}...**", parse_mode="Markdown")
+
+    signal, confidence, reasoning = analyze_pair(ticker)
+
+    if signal == "BUY":
+        direction_str = "شراء 🟢 (CALL / BUY)"
+    elif signal == "SELL":
+        direction_str = "بيع 🔴 (PUT / SELL)"
+    else:
+        direction_str = "⏳ عدم دخول (WAIT)"
+
+    response_text = (
+        "=============================\n"
+        "📊 **توصية Pocket Option احترافية** 📊\n"
+        "=============================\n"
+        f"🔤 **الزوج:** {pair_name}\n"
+        f"🎯 **الاتجاه:** {direction_str}\n"
+        f"📈 **نسبة الثقة:** {confidence}%\n"
+        "-------------------------------------\n"
+        f"💡 **التحليل الفني:** {reasoning}\n"
+        "=============================\n\n"
+        "👇 **اختر المدة الزمنية المطلوبة للصفقة:**"
+    )
+
+    # أزرار الوقت من 10 ثوانٍ إلى ربع ساعة (15 دقيقة)
+    time_markup = types.InlineKeyboardMarkup(row_width=3)
+    t1 = types.InlineKeyboardButton("⏱️ 10 ثواني", callback_data="time_10 ثواني")
+    t2 = types.InlineKeyboardButton("⏱️ 30 ثانية", callback_data="time_30 ثانية")
+    t3 = types.InlineKeyboardButton("⏱️ دقيقة واحدة", callback_data="time_دقيقة واحدة")
+    t4 = types.InlineKeyboardButton("⏱️ دقيقتين", callback_data="time_دقيقتين")
+    t5 = types.InlineKeyboardButton("⏱️ 3 دقائق", callback_data="time_3 دقائق")
+    t6 = types.InlineKeyboardButton("⏱️ 5 دقائق", callback_data="time_5 دقائق")
+    t7 = types.InlineKeyboardButton("⏱️ 10 دقائق", callback_data="time_10 دقائق")
+    t8 = types.InlineKeyboardButton("⏱️ 15 دقيقة", callback_data="time_15 دقيقة")
+    time_markup.add(t1, t2, t3, t4, t5, t6, t7, t8)
+
+    bot.send_message(call.message.chat.id, response_text, parse_mode="Markdown", reply_markup=time_markup)
+
+# الاستجابة عند اختيار الوقت
+@bot.callback_query_handler(func=lambda call: call.data.startswith("time_"))
+def handle_time_selection(call):
+    selected_time = call.data.replace("time_", "")
+    bot.answer_callback_query(call.id, text=f"تم تحديد المدة: {selected_time}")
+    bot.send_message(call.message.chat.id, f"✅ **تم اعتماد المدة الزمنية للصفقة:** {selected_time}\nاستعد للدخول فوراً مع بداية الشمعة إذا كانت التوصية مناسبة! 🚀", parse_mode="Markdown")
+    bot.send_message(call.message.chat.id, "اختر الزوج التالي للتحليل:", reply_markup=get_main_keyboard())
+
+# ==========================================
+# 5. تشغيل خادم الويب والبوت تلقائياً
+# ==========================================
+if __name__ == "__main__":
+    t = threading.Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+
+    while True:
+        try:
+            bot.infinity_polling(timeout=10, long_polling_timeout=5)
+        except Exception as e:
+            print(f"Error encountered: {e}")
+            time.sleep(3)
