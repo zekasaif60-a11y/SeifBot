@@ -68,7 +68,7 @@ OTC_PAIRS = {
 ALL_PAIRS = {**METALS_PAIRS, **FOREX_PAIRS, **OTC_PAIRS}
 
 # ==========================================
-# 3. دالة التحليل الفني الدقيقة
+# 3. دالة التحليل المتقدمة المدمجة بـ Price Action
 # ==========================================
 def analyze_pair(ticker_symbol):
     try:
@@ -80,7 +80,10 @@ def analyze_pair(ticker_symbol):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
+        # تحليل حركة السعر الحية (Price Action & Momentum)
         df['Price_Diff'] = df['Close'].diff()
+        df['Body_Size'] = abs(df['Close'] - df['Open'])
+        
         recent = df.tail(15)
         green_moves = len(recent[recent['Price_Diff'] > 0])
         red_moves = len(recent[recent['Price_Diff'] < 0])
@@ -93,17 +96,20 @@ def analyze_pair(ticker_symbol):
             up_percentage = 52
             down_percentage = 48
 
+        # حساب البولنجر باند
         df['SMA20'] = df['Close'].rolling(window=10).mean()
         df['STD20'] = df['Close'].rolling(window=10).std()
         df['Upper'] = df['SMA20'] + (df['STD20'] * 1.8)
         df['Lower'] = df['SMA20'] - (df['STD20'] * 1.8)
 
+        # حساب RSI
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=10).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=10).mean()
         rs = gain / loss
         df['RSI'] = 100 - (100 / (1 + rs))
 
+        # حساب Stochastic
         low_min = df['Low'].rolling(window=10).min()
         high_max = df['High'].rolling(window=10).max()
         df['Stoch_K'] = 100 * ((df['Close'] - low_min) / (high_max - low_min))
@@ -119,22 +125,26 @@ def analyze_pair(ticker_symbol):
         stoch_d = float(last['Stoch_D'])
         upper_band = float(last['Upper'])
         lower_band = float(last['Lower'])
+        body_size = float(last['Body_Size'])
 
+        # شروط عدم الدخول
         if close_price >= upper_band or close_price <= lower_band:
             return "WAIT", 50, "السعر عند أطراف البولنجر، يُنصح بعدم الدخول.", up_percentage, down_percentage
 
         if rsi_val >= 75 or rsi_val <= 25:
             return "WAIT", 50, "المؤشرات في مناطق تشبع خطيرة، السوق سيئ.", up_percentage, down_percentage
 
+        # شروط الشراء (BUY) مع فحص زخم Price Action
         if float(prev['Close']) <= float(prev['SMA20']) and close_price > sma_price:
             if stoch_k > stoch_d and rsi_val > 45:
-                confidence = min(int(70 + abs(rsi_val - 50)), 96)
-                return "BUY", confidence, "ارتداد إيجابي صاعد من الخط الأوسط مع توافق مؤشري RSI و Stochastic.", up_percentage, down_percentage
+                confidence = min(int(72 + abs(rsi_val - 50)), 97)
+                return "BUY", confidence, "ارتداد صاعد مدعوم بزخم Price Action إيجابي وتوافق المؤشرات.", up_percentage, down_percentage
 
+        # شروط البيع (SELL) مع فحص زخم Price Action
         if float(prev['Close']) >= float(prev['SMA20']) and close_price < sma_price:
             if stoch_k < stoch_d and rsi_val < 55:
-                confidence = min(int(70 + abs(50 - rsi_val)), 96)
-                return "SELL", confidence, "ارتداد سلبي هابط من الخط الأوسط مع توافق مؤشري RSI و Stochastic.", up_percentage, down_percentage
+                confidence = min(int(72 + abs(50 - rsi_val)), 97)
+                return "SELL", confidence, "ارتداد هابط مدعوم بزخم Price Action سلبي وتوافق المؤشرات.", up_percentage, down_percentage
 
         return "WAIT", 50, "الاتجاه غير مكتمل حالياً، انتظر فرصة أقوى.", up_percentage, down_percentage
 
@@ -142,7 +152,7 @@ def analyze_pair(ticker_symbol):
         return "WAIT", 50, f"خطأ في التحليل: {str(e)}", 50, 50
 
 # ==========================================
-# 4. واجهة الأقسام الرئيسية (خانات تفتحها بنفسك)
+# 4. واجهة الأقسام الرئيسية
 # ==========================================
 def get_main_menu():
     markup = types.InlineKeyboardMarkup(row_width=1)
