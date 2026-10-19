@@ -22,7 +22,7 @@ def run_flask():
     app.run(host="0.0.0.0", port=port, debug=False)
 
 # ==========================================
-# 2. تصنيف الأزواج والأصول حسب الفئات
+# 2. تصنيف أزواج OTC والأسواق الحقيقية
 # ==========================================
 TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 bot = telebot.TeleBot(TOKEN)
@@ -30,20 +30,6 @@ bot = telebot.TeleBot(TOKEN)
 METALS_PAIRS = {
     "الذهب (XAU/USD)": "GC=F",
     "الفضة (XAG/USD)": "SI=F"
-}
-
-FOREX_PAIRS = {
-    "EUR/USD": "EURUSD=X",
-    "GBP/USD": "GBPUSD=X",
-    "USD/JPY": "JPY=X",
-    "AUD/USD": "AUDUSD=X",
-    "USD/CAD": "CAD=X",
-    "USD/CHF": "CHF=X",
-    "NZD/USD": "NZDUSD=X",
-    "EUR/GBP": "EURGBP=X",
-    "EUR/JPY": "EURJPY=X",
-    "GBP/JPY": "GBPJPY=X",
-    "AUD/JPY": "AUDJPY=X"
 }
 
 OTC_PAIRS = {
@@ -65,26 +51,23 @@ OTC_PAIRS = {
     "USD/PKR (OTC)": "USDPKR=X"
 }
 
-ALL_PAIRS = {**METALS_PAIRS, **FOREX_PAIRS, **OTC_PAIRS}
+ALL_PAIRS = {**METALS_PAIRS, **OTC_PAIRS}
 
 # ==========================================
-# 3. دالة التحليل المتقدمة المدمجة بـ Price Action
+# 3. دالة التحليل الفني المحدثة
 # ==========================================
 def analyze_pair(ticker_symbol):
     try:
-        data = yf.download(tickers=ticker_symbol, period="1d", interval="1m", progress=False)
-        if data.empty or len(data) < 15:
+        data = yf.download(tickers=ticker_symbol, period="5d", interval="15m", progress=False)
+        if data.empty or len(data) < 10:
             return "WAIT", 50, "بيانات السوق غير كافية حالياً.", 50, 50
 
         df = data.copy()
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # تحليل حركة السعر الحية (Price Action & Momentum)
         df['Price_Diff'] = df['Close'].diff()
-        df['Body_Size'] = abs(df['Close'] - df['Open'])
-        
-        recent = df.tail(15)
+        recent = df.tail(10)
         green_moves = len(recent[recent['Price_Diff'] > 0])
         red_moves = len(recent[recent['Price_Diff'] < 0])
         total_moves = green_moves + red_moves
@@ -96,24 +79,21 @@ def analyze_pair(ticker_symbol):
             up_percentage = 52
             down_percentage = 48
 
-        # حساب البولنجر باند
-        df['SMA20'] = df['Close'].rolling(window=10).mean()
-        df['STD20'] = df['Close'].rolling(window=10).std()
-        df['Upper'] = df['SMA20'] + (df['STD20'] * 1.8)
-        df['Lower'] = df['SMA20'] - (df['STD20'] * 1.8)
+        df['SMA20'] = df['Close'].rolling(window=5).mean()
+        df['STD20'] = df['Close'].rolling(window=5).std()
+        df['Upper'] = df['SMA20'] + (df['STD20'] * 1.5)
+        df['Lower'] = df['SMA20'] - (df['STD20'] * 1.5)
 
-        # حساب RSI
         delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=10).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=10).mean()
+        gain = (delta.where(delta > 0, 0)).rolling(window=5).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=5).mean()
         rs = gain / loss
         df['RSI'] = 100 - (100 / (1 + rs))
 
-        # حساب Stochastic
-        low_min = df['Low'].rolling(window=10).min()
-        high_max = df['High'].rolling(window=10).max()
+        low_min = df['Low'].rolling(window=5).min()
+        high_max = df['High'].rolling(window=5).max()
         df['Stoch_K'] = 100 * ((df['Close'] - low_min) / (high_max - low_min))
-        df['Stoch_D'] = df['Stoch_K'].rolling(window=3).mean()
+        df['Stoch_D'] = df['Stoch_K'].rolling(window=2).mean()
 
         last = df.iloc[-1]
         prev = df.iloc[-2]
@@ -125,28 +105,26 @@ def analyze_pair(ticker_symbol):
         stoch_d = float(last['Stoch_D'])
         upper_band = float(last['Upper'])
         lower_band = float(last['Lower'])
-        body_size = float(last['Body_Size'])
 
-        # شروط عدم الدخول
-        if close_price >= upper_band or close_price <= lower_band:
-            return "WAIT", 50, "السعر عند أطراف البولنجر، يُنصح بعدم الدخول.", up_percentage, down_percentage
+        if close_price >= upper_band:
+            return "SELL", 78, "السعر لمس الحد العلوي، فرصة هبوط قوية (PUT).", up_percentage, down_percentage
 
-        if rsi_val >= 75 or rsi_val <= 25:
-            return "WAIT", 50, "المؤشرات في مناطق تشبع خطيرة، السوق سيئ.", up_percentage, down_percentage
+        if close_price <= lower_band:
+            return "BUY", 78, "السعر لمس الحد السفلي، فرصة صعود قوية (CALL).", up_percentage, down_percentage
 
-        # شروط الشراء (BUY) مع فحص زخم Price Action
-        if float(prev['Close']) <= float(prev['SMA20']) and close_price > sma_price:
-            if stoch_k > stoch_d and rsi_val > 45:
-                confidence = min(int(72 + abs(rsi_val - 50)), 97)
-                return "BUY", confidence, "ارتداد صاعد مدعوم بزخم Price Action إيجابي وتوافق المؤشرات.", up_percentage, down_percentage
+        if rsi_val > 70:
+            return "SELL", 74, "مؤشر RSI في منطقة تشبع شرائي، يُنصح بالبيع.", up_percentage, down_percentage
 
-        # شروط البيع (SELL) مع فحص زخم Price Action
-        if float(prev['Close']) >= float(prev['SMA20']) and close_price < sma_price:
-            if stoch_k < stoch_d and rsi_val < 55:
-                confidence = min(int(72 + abs(50 - rsi_val)), 97)
-                return "SELL", confidence, "ارتداد هابط مدعوم بزخم Price Action سلبي وتوافق المؤشرات.", up_percentage, down_percentage
+        if rsi_val < 30:
+            return "BUY", 74, "مؤشر RSI في منطقة تشبع بيعي، يُنصح بالشراء.", up_percentage, down_percentage
 
-        return "WAIT", 50, "الاتجاه غير مكتمل حالياً، انتظر فرصة أقوى.", up_percentage, down_percentage
+        if close_price > sma_price and stoch_k > stoch_d:
+            return "BUY", 72, "ارتباط إيجابي فوق الخط الأوسط.", up_percentage, down_percentage
+
+        if close_price < sma_price and stoch_k < stoch_d:
+            return "SELL", 72, "ارتباط سلبي تحت الخط الأوسط.", up_percentage, down_percentage
+
+        return "WAIT", 50, "السوق هادئ حالياً، انتظر فرصة أقوى.", up_percentage, down_percentage
 
     except Exception as e:
         return "WAIT", 50, f"خطأ في التحليل: {str(e)}", 50, 50
@@ -157,14 +135,13 @@ def analyze_pair(ticker_symbol):
 def get_main_menu():
     markup = types.InlineKeyboardMarkup(row_width=1)
     btn1 = types.InlineKeyboardButton("🥇 قسم الذهب والمعادن (Gold & Silver)", callback_data="menu_metals")
-    btn2 = types.InlineKeyboardButton("💱 أزواج الفوركس العادية (Forex)", callback_data="menu_forex")
-    btn3 = types.InlineKeyboardButton("🔄 أزواج الـ OTC الرسمية", callback_data="menu_otc")
-    markup.add(btn1, btn2, btn3)
+    btn2 = types.InlineKeyboardButton("🔄 أزواج الـ OTC الرسمية", callback_data="menu_otc")
+    markup.add(btn1, btn2)
     return markup
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    welcome_text = "📊 **مرحباً بك يا زكريا في بوت Pocket Option الاحترافي** 📊\n\nاختر القسم المطلوب لتفتحه وتعرض أزواجه:"
+    welcome_text = "📊 **مرحباً بك يا زكريا في بوت Pocket Option** 📊\n\nاختر القسم المطلوب لتفتحه وتعرض أزواجه:"
     bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_main_menu())
 
 @bot.callback_query_handler(func=lambda call: call.data == "menu_metals")
@@ -174,14 +151,6 @@ def open_metals(call):
         markup.add(types.InlineKeyboardButton(text=name, callback_data=f"select_{name}"))
     markup.add(types.InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="back_main"))
     bot.edit_message_text("🥇 **قسم الذهب والمعادن:**\nاختر الأصل المطلوب للفحص:", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: call.data == "menu_forex")
-def open_forex(call):
-    markup = types.InlineKeyboardMarkup(row_width=3)
-    buttons = [types.InlineKeyboardButton(text=name, callback_data=f"select_{name}") for name in FOREX_PAIRS.keys()]
-    markup.add(*buttons)
-    markup.add(types.InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="back_main"))
-    bot.edit_message_text("💱 **أزواج الفوركس العادية:**\nاختر الزوج المطلوب للفحص:", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "menu_otc")
 def open_otc(call):
@@ -243,7 +212,7 @@ def handle_pair_selection(call):
 def handle_time_selection(call):
     selected_time = call.data.replace("time_", "")
     bot.answer_callback_query(call.id, text=f"تم تحديد المدة: {selected_time}")
-    bot.send_message(call.message.chat.id, f"✅ **تم اعتماد المدة الزمنية للصفقة:** {selected_time}\nاستعد للدخول فوراً مع بداية الشمعة إذا كانت التوصية مناسبة! 🚀", parse_mode="Markdown")
+    bot.send_message(call.message.chat.id, f"✅ **تم اعتماد المدة الزمنية للصفقة:** {selected_time}\nاستعد للدخول فوراً مع بداية الشمعة! 🚀", parse_mode="Markdown")
     bot.send_message(call.message.chat.id, "اختر القسم للبدء من جديد:", reply_markup=get_main_menu())
 
 # ==========================================
