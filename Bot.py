@@ -17,7 +17,7 @@ def run_flask():
     app.run(host="0.0.0.0", port=port, debug=False)
 
 # 2. إعداد البوت والتوكن الخاص بك
-TOKEN = "8950126151:AAGQFtwHnTCAFMIwtW7v2kcfMCFU-uzRzdg"
+TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
 # قائمة شاملة وكاملة لجميع أزواج وأصول منصة Pocket Option
