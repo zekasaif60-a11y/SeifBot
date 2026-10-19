@@ -65,7 +65,6 @@ OTC_PAIRS = {
     "USD/PKR (OTC)": "USDPKR=X"
 }
 
-# دمج الكل للبحث السريع
 ALL_PAIRS = {**METALS_PAIRS, **FOREX_PAIRS, **OTC_PAIRS}
 
 # ==========================================
@@ -158,7 +157,6 @@ def send_welcome(message):
     welcome_text = "📊 **مرحباً بك يا زكريا في بوت Pocket Option الاحترافي** 📊\n\nاختر القسم المطلوب لتفتحه وتعرض أزواجه:"
     bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_main_menu())
 
-# فتح قسم المعادن والذهب
 @bot.callback_query_handler(func=lambda call: call.data == "menu_metals")
 def open_metals(call):
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -167,7 +165,6 @@ def open_metals(call):
     markup.add(types.InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="back_main"))
     bot.edit_message_text("🥇 **قسم الذهب والمعادن:**\nاختر الأصل المطلوب للفحص:", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
 
-# فتح قسم الفوركس العادي
 @bot.callback_query_handler(func=lambda call: call.data == "menu_forex")
 def open_forex(call):
     markup = types.InlineKeyboardMarkup(row_width=3)
@@ -176,7 +173,6 @@ def open_forex(call):
     markup.add(types.InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="back_main"))
     bot.edit_message_text("💱 **أزواج الفوركس العادية:**\nاختر الزوج المطلوب للفحص:", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
 
-# فتح قسم الـ OTC
 @bot.callback_query_handler(func=lambda call: call.data == "menu_otc")
 def open_otc(call):
     markup = types.InlineKeyboardMarkup(row_width=3)
@@ -185,12 +181,10 @@ def open_otc(call):
     markup.add(types.InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="back_main"))
     bot.edit_message_text("🔄 **أزواج الـ OTC:**\nاختر الزوج المطلوب للفحص:", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
 
-# العودة للقائمة الرئيسية
 @bot.callback_query_handler(func=lambda call: call.data == "back_main")
 def back_to_main(call):
     bot.edit_message_text("📊 **القائمة الرئيسية:**\nاختر القسم المطلوب:", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=get_main_menu())
 
-# فحص واختيار الزوج
 @bot.callback_query_handler(func=lambda call: call.data.startswith("select_"))
 def handle_pair_selection(call):
     pair_name = call.data.replace("select_", "")
@@ -245,15 +239,14 @@ def handle_time_selection(call):
 # ==========================================
 # 5. تشغيل خادم الويب والبوت تلقائياً
 # ==========================================
-If __name__ == "__main__":
+if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
 
-    While True:
-        Try:
-            Bot.infinity_polling(timeout=10, long_polling_timeout=5)
-        Except Exception as e:
-            Print(f"Error encountered: {e}")
-            Time.sleep(3)
-  
+    while True:
+        try:
+            bot.infinity_polling(timeout=10, long_polling_timeout=5)
+        except Exception as e:
+            print(f"Error encountered: {e}")
+            time.sleep(3)
