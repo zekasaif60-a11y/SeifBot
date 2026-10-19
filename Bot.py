@@ -22,22 +22,13 @@ def run_flask():
     app.run(host="0.0.0.0", port=port, debug=False)
 
 # ==========================================
-# 2. إعداد البوت وقائمة جميع الأزواج والأصول (Pocket Option)
+# 2. أزواج Pocket Option الرسمية (عادية و OTC) فقط
 # ==========================================
 TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 bot = telebot.TeleBot(TOKEN)
 
 PAIRS = {
-    # المعادن والسلع والعملات الرقمية والأسهم
-    "الذهب (XAU/USD)": "GC=F",
-    "الفضة (XAG/USD)": "SI=F",
-    "النفط (Crude Oil)": "CL=F",
-    "البيتكوين (BTC/USD)": "BTC-USD",
-    "إيثريوم (ETH/USD)": "ETH-USD",
-    "أبل (Apple)": "AAPL",
-    "جوجل (Google)": "GOOGL",
-    
-    # أزواج الفوركس العادية
+    # أزواج الفوركس العادية المتاحة في المنصة
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "JPY=X",
@@ -61,7 +52,7 @@ PAIRS = {
     "NZD/JPY": "NZDJPY=X",
     "NZD/CAD": "NZDCAD=X",
 
-    # أزواج الـ OTC
+    # أزواج الـ OTC المتاحة في منصة Pocket Option
     "EUR/USD (OTC)": "EURUSD=X",
     "GBP/USD (OTC)": "GBPUSD=X",
     "USD/JPY (OTC)": "JPY=X",
@@ -81,7 +72,7 @@ PAIRS = {
 }
 
 # ==========================================
-# 3. دالة التحليل الفني وحساب نسب الصعود والهبوط
+# 3. دالة التحليل الفني وحساب نسب السوق بدقة
 # ==========================================
 def analyze_pair(ticker_symbol):
     try:
@@ -90,32 +81,46 @@ def analyze_pair(ticker_symbol):
             return "WAIT", 50, "بيانات السوق غير كافية حالياً.", 50, 50
 
         df = data.copy()
+        
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # حساب نسب الصعود والهبوط في آخر 20 شمعة
-        recent_candles = df.tail(20)
-        green_candles = (recent_candles['Close'] > recent_candles['Open']).sum()
-        red_candles = (recent_candles['Close'] < recent_candles['Open']).sum()
-        total_valid = green_candles + red_candles if (green_candles + red_candles) > 0 else 1
+        if 'Close' not in df.columns or 'Open' not in df.columns:
+            return "WAIT", 50, "تعذر قراءة أسعار الشموع بدقة.", 50, 50
 
-        up_percentage = int((green_candles / total_valid) * 100)
-        down_percentage = 100 - up_percentage
+        # حساب نسب الصعود والهبوط لآخر 20 شمعة
+        recent_candles = df.tail(20).copy()
+        green_candles = 0
+        red_candles = 0
 
-        # حساب البولنجر باند (Bollinger Bands)
+        for idx, rowschl in recent_candles.iterrows():
+            c_val = float(rowschl['Close'])
+            o_val = float(rowschl['Open'])
+            if c_val > o_val:
+                green_candles += 1
+            elif c_val < o_val:
+                red_candles += 1
+
+        total_valid = green_candles + red_candles
+        if total_valid > 0:
+            up_percentage = int((green_candles / total_valid) * 100)
+            down_percentage = 100 - up_percentage
+        else:
+            up_percentage = 50
+            down_percentage = 50
+
+        # مؤشرات البولنجر، RSI، و Stochastic
         df['SMA20'] = df['Close'].rolling(window=20).mean()
         df['STD20'] = df['Close'].rolling(window=20).std()
         df['Upper'] = df['SMA20'] + (df['STD20'] * 2)
         df['Lower'] = df['SMA20'] - (df['STD20'] * 2)
 
-        # حساب RSI
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         df['RSI'] = 100 - (100 / (1 + rs))
 
-        # حساب Stochastic
         low_min = df['Low'].rolling(window=14).min()
         high_max = df['High'].rolling(window=14).max()
         df['Stoch_K'] = 100 * ((df['Close'] - low_min) / (high_max - low_min))
@@ -124,26 +129,28 @@ def analyze_pair(ticker_symbol):
         last = df.iloc[-1]
         prev = df.iloc[-2]
 
-        close_price = last['Close']
-        sma_price = last['SMA20']
-        rsi_val = last['RSI']
-        stoch_k = last['Stoch_K']
-        stoch_d = last['Stoch_D']
+        close_price = float(last['Close'])
+        sma_price = float(last['SMA20'])
+        rsi_val = float(last['RSI'])
+        stoch_k = float(last['Stoch_K'])
+        stoch_d = float(last['Stoch_D'])
+        upper_band = float(last['Upper'])
+        lower_band = float(last['Lower'])
 
-        # قواعد عدم الدخول
-        if close_price >= last['Upper'] or close_price <= last['Lower']:
+        # شروط عدم الدخول
+        if close_price >= upper_band or close_price <= lower_band:
             return "WAIT", 50, "السعر يتواجد عند أطراف البولنجر، يُنصح بعدم الدخول.", up_percentage, down_percentage
 
         if rsi_val >= 70 or rsi_val <= 30:
             return "WAIT", 50, "المؤشرات في مناطق تشبع (السوق سيئ، لا تدخل عكس الاتجاه).", up_percentage, down_percentage
 
-        # صفقة شراء (CALL / BUY)
-        if prev['Close'] <= prev['SMA20'] and close_price > sma_price:
+        # شروط الشراء (BUY)
+        if float(prev['Close']) <= float(prev['SMA20']) and close_price > sma_price:
             if stoch_k > stoch_d and rsi_val > 50:
                 return "BUY", 94, "ارتداد إيجابي صاعد من الخط الأوسط مع تقاطع إيجابي لمؤشري RSI و Stochastic.", up_percentage, down_percentage
 
-        # صفقة بيع (PUT / SELL)
-        if prev['Close'] >= prev['SMA20'] and close_price < sma_price:
+        # شروط البيع (SELL)
+        if float(prev['Close']) >= float(prev['SMA20']) and close_price < sma_price:
             if stoch_k < stoch_d and rsi_val < 50:
                 return "SELL", 91, "ارتداد سلبي هابط من الخط الأوسط مع تقاطع سلبي لمؤشري RSI و Stochastic.", up_percentage, down_percentage
 
@@ -153,7 +160,7 @@ def analyze_pair(ticker_symbol):
         return "WAIT", 50, f"خطأ في التحليل: {str(e)}", 50, 50
 
 # ==========================================
-# 4. واجهة أزرار تليجرام وأوامر البوت
+# 4. واجهة تليجرام وأزرار منظمة بعناية
 # ==========================================
 def get_main_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=3)
@@ -163,7 +170,7 @@ def get_main_keyboard():
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    welcome_text = "📊 **توصية Pocket Option احترافية** 📊\n\nاختر زوج العملات أو الأصل للبدء في الفحص والتحليل:"
+    welcome_text = "📊 **توصية Pocket Option احترافية** 📊\n\nاختر زوج العملات للبدء في الفحص والتحليل:"
     bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("select_"))
@@ -187,7 +194,7 @@ def handle_pair_selection(call):
         "=============================\n"
         "📊 **توصية Pocket Option احترافية** 📊\n"
         "=============================\n"
-        f"🔤 **الزوج / الأصل:** {pair_name}\n"
+        f"🔤 **الزوج:** {pair_name}\n"
         f"🎯 **الاتجاه:** {direction_str}\n"
         f"📈 **نسبة الثقة:** {confidence}%\n"
         f"📊 **نسبة السوق:** 🟢 صعود {up_pct}% | 🔴 هبوط {down_pct}%\n"
@@ -215,7 +222,7 @@ def handle_time_selection(call):
     selected_time = call.data.replace("time_", "")
     bot.answer_callback_query(call.id, text=f"تم تحديد المدة: {selected_time}")
     bot.send_message(call.message.chat.id, f"✅ **تم اعتماد المدة الزمنية للصفقة:** {selected_time}\nاستعد للدخول فوراً مع بداية الشمعة إذا كانت التوصية مناسبة! 🚀", parse_mode="Markdown")
-    bot.send_message(call.message.chat.id, "اختر الزوج/الأصل التالي للتحليل:", reply_markup=get_main_keyboard())
+    bot.send_message(call.message.chat.id, "اختر الزوج التالي للتحليل:", reply_markup=get_main_keyboard())
 
 # ==========================================
 # 5. تشغيل خادم الويب والبوت تلقائياً
@@ -231,3 +238,4 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error encountered: {e}")
             time.sleep(3)
+      
