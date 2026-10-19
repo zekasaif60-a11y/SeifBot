@@ -1,7 +1,7 @@
-
 pyTelegramBotAPI
 pytz
 Flask
 yfinance
 pandas
-pandas_ta
+numpy
+
