@@ -8,7 +8,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# 1. قائمة أزواج الـ OTC الكاملة في بوكت أپشن
+# 1. قائمة أزواج الـ OTC الكاملة في Pocket Option
 PAIRS_OTC = [
     "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)", "AUD/USD (OTC)",
     "USD/CAD (OTC)", "USD/CHF (OTC)", "NZD/USD (OTC)", "EUR/GBP (OTC)",
@@ -27,14 +27,14 @@ PAIRS_REAL = [
     "CAD/JPY", "CHF/JPY", "AUD/CAD", "AUD/CHF"
 ]
 
-# دالة التحليل الفني الصارم والدقيق للمؤشرات
+# دالة التحليل الفني الصارم والدقيق للمؤشرات (Bollinger Bands + RSI + Williams %R)
 def analyze_market_conditions(price, middle_band, rsi, wpr):
     if price > middle_band and rsi >= 52 and wpr >= -48:
         return {
             "direction": "صعود (CALL) 🟢",
             "confidence": "92%",
             "duration": "دقيقتان إلى 3 دقائق",
-            "reason": "ارتداد مثالي أعلى خط البولنجر الأوسط مع تأكيد قوي من مؤشري RSI و Williams %R."
+            "reason": "ارتداد مثالي أعلى خط البولنجر الأوسط مع تأكيد قوي وصريح من مؤشري RSI و Williams %R."
         }
     elif price < middle_band and rsi <= 48 and wpr <= -52:
         return {
@@ -154,7 +154,7 @@ async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 if __name__ == '__main__':
-    # 🔑 تم وضع التوكن الخاص بك هنا مباشرة وبشكل صحيح:
+    # 🔑 التوكن الصحيح والنشط الخاص بك مدرج هنا مباشرة:
     BOT_TOKEN = "8950126151:AAH8bMJGNBKa7dtOGMS9f--Lm6qd10yFdE"
     
     app = ApplicationBuilder().token(BOT_TOKEN).build()
