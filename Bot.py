@@ -155,7 +155,7 @@ async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 if __name__ == '__main__':
     # 🔑 التوكن الجديد النشط المعتمد:
-    BOT_TOKEN = "8950126151:AAHQNS8au0YZjLCznMi2OBsLl7ZljDNsHRA"
+    BOT_TOKEN = "8950126151:AAHQNS8au0YZjLCznMi2OBsLl7ZljDNsHRA[span_2](start_span)"[span_2](end_span)
     
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     
