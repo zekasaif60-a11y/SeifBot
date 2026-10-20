@@ -8,7 +8,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# قائمة أزواج العملات (شاملة العادية و OTC)
+# 1. قائمة أزواج OTC
 PAIRS_OTC = [
     "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)",
     "AUD/USD (OTC)", "USD/CAD (OTC)", "USD/CHF (OTC)",
@@ -16,6 +16,7 @@ PAIRS_OTC = [
     "GBP/JPY (OTC)", "AUD/JPY (OTC)", "USD/RUB (OTC)"
 ]
 
+# 2. قائمة الأزواج العادية (Real Market)
 PAIRS_REAL = [
     "EUR/USD", "GBP/USD", "USD/JPY",
     "AUD/USD", "USD/CAD", "USD/CHF",
@@ -28,7 +29,6 @@ def analyze_indicators(price, middle_band, rsi, wpr):
     """
     تحليل فني سريع ومرن يعتمد على Bollinger Bands + RSI + Williams %R
     """
-    # 1. شرط الشراء (CALL / صعود)
     if price > middle_band and rsi >= 50 and wpr >= -50:
         return {
             "direction": "صعود (CALL) 🟢",
@@ -38,8 +38,6 @@ def analyze_indicators(price, middle_band, rsi, wpr):
             "duration": "من دقيقة إلى 3 دقائق",
             "reason": "ارتداد صاعد أعلى الخط الأوسط لـ Bollinger Bands ودعم متزامن من مؤشري RSI و Williams %R."
         }
-    
-    # 2. شرط البيع (PUT / هبوط)
     elif price < middle_band and rsi <= 50 and wpr <= -50:
         return {
             "direction": "هبوط (PUT) 🔴",
@@ -49,8 +47,6 @@ def analyze_indicators(price, middle_band, rsi, wpr):
             "duration": "من دقيقة إلى 3 دقائق",
             "reason": "كسر وهبوط تحت الخط الأوسط لـ Bollinger Bands مع تقاطع سلبي في مؤشرات الزخم."
         }
-    
-    # 3. إشارة صعود متوسطة القوة (تجنب التعليق)
     elif price > middle_band:
         return {
             "direction": "صعود سريع (CALL) 🟢",
@@ -60,8 +56,6 @@ def analyze_indicators(price, middle_band, rsi, wpr):
             "duration": "30 ثانية إلى دقيقة",
             "reason": "السعر فوق الخط الأوسط ولكن الزخم متوسط."
         }
-        
-    # 4. إشارة هبوط متوسطة القوة (تجنب التعليق)
     elif price < middle_band:
         return {
             "direction": "هبوط سريع (PUT) 🔴",
@@ -71,8 +65,6 @@ def analyze_indicators(price, middle_band, rsi, wpr):
             "duration": "30 ثانية إلى دقيقة",
             "reason": "السعر تحت الخط الأوسط ولكن الزخم متوسط."
         }
-
-    # 5. سوق متذبذب تماماً
     else:
         return {
             "direction": "عدم دخول (WAIT) ⏳",
@@ -83,11 +75,11 @@ def analyze_indicators(price, middle_band, rsi, wpr):
             "reason": "تذبذب حاد عند الخط الأوسط والمؤشرات في المنتصف تماماً. انتظر فرصة أوضح."
         }
 
-# إنشاء لوحة الأزرار (أزواج OTC والأزواج العادية)
+# بناء القائمة بالأزرار
 def build_keyboard():
     keyboard = []
     
-    # قسم أزواج OTC
+    # قسم OTC
     row = []
     for pair in PAIRS_OTC:
         row.append(InlineKeyboardButton(pair, callback_data=f"pair_{pair}"))
@@ -112,7 +104,7 @@ def build_keyboard():
         
     return InlineKeyboardMarkup(keyboard)
 
-# أمر البداية /start
+# أمر /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = build_keyboard()
     await update.message.reply_text(
@@ -122,7 +114,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# معالجة اختيار الزوج والتحليل
+# معالجة اختيار الزوج
 async def handle_pair_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -134,7 +126,7 @@ async def handle_pair_selection(update: Update, context: ContextTypes.DEFAULT_TY
     
     await query.edit_message_text(f"⏳ **جاري تحليل الشموع والبيانات لـ ({pair_name})...**", parse_mode="Markdown")
     
-    # قيم تحليلية افتراضية محاكاة
+    # بيانات تحليل افتراضية
     price = 1.09860
     middle_band = 1.09850
     rsi = 55.0
@@ -176,7 +168,8 @@ async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 if __name__ == '__main__':
-    TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
+    # ⚠️ قم بوضع توكن البوت الحقيقي الخاص بك من @BotFather بدلاً من الكود أدناه:
+    TOKEN = "ضع_التوكن_الخاص_بكبوت_التليجرام_هنا"
     
     app = ApplicationBuilder().token(TOKEN).build()
     
