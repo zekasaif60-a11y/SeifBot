@@ -1,7 +1,4 @@
-pyTelegramBotAPI
-pytz
-Flask
-yfinance
-pandas
-numpy
+python-telegram-bot
+requests
+
 
