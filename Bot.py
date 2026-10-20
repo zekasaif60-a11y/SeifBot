@@ -27,7 +27,7 @@ PAIRS_REAL = [
     "CAD/JPY", "CHF/JPY", "AUD/CAD", "AUD/CHF"
 ]
 
-# دالة التحليل الفني الصارم والدقيق للمؤشرات (Bollinger Bands + RSI + Williams %R)
+# دالة التحليل الفني الصارم والدقيق للمؤشرات
 def analyze_market_conditions(price, middle_band, rsi, wpr):
     if price > middle_band and rsi >= 52 and wpr >= -48:
         return {
@@ -154,7 +154,7 @@ async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 if __name__ == '__main__':
-    # 🔑 التوكن الصحيح والنشط الخاص بك مدرج هنا مباشرة:
+    # وضع التوكن مباشرة هنا لتجنب أي مشاكل في قراءة المتغيرات
     BOT_TOKEN = "8950126151:AAH8bMJGNBKa7dtOGMS9f--Lm6qd10yFdE"
     
     app = ApplicationBuilder().token(BOT_TOKEN).build()
