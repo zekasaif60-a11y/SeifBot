@@ -2,7 +2,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# إعداد السجلات
+# إعداد السجلات الأساسية
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -27,7 +27,7 @@ PAIRS_REAL = [
     "CAD/JPY", "CHF/JPY", "AUD/CAD", "AUD/CHF"
 ]
 
-# دالة التحليل الفني الصارم والدقيق
+# دالة التحليل الفني الصارم والدقيق للمؤشرات
 def analyze_market_conditions(price, middle_band, rsi, wpr):
     if price > middle_band and rsi >= 52 and wpr >= -48:
         return {
@@ -154,8 +154,8 @@ async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 if __name__ == '__main__':
-    # ⚠️ ضع توكن بوت التليجرام الخاص بك هنا:
-    BOT_TOKEN = "ضع_التوكن_الخاص_بك_هنا"
+    # 🔑 تم وضع التوكن الخاص بك هنا مباشرة وبشكل صحيح:
+    BOT_TOKEN = "8950126151:AAH8bMJGNBKa7dtOGMS9f--Lm6qd10yFdE"
     
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     
