@@ -1,201 +1,162 @@
-import logging
-import os
-import sys
+import json
+import time
+import re
+import websocket
 import threading
-import random
-from flask import Flask
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+import requests
 
-# تفعيل سجلات الأخطاء
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# ==================== إعدادات الحساب والربط ====================
 
-# ----------------------------------------------------
-# 1. خادم Flask لإبقاء الخدمة نشطة على Render
-# ----------------------------------------------------
-web_app = Flask(__name__)
+# 1. رمز المصادقة لمنصة Pocket Option (تأكد من تجديده من المتصفح إذا انتهت الجلسة)
+POCKET_OPTION_SSID = '42["auth",{"session":"YOUR_POCKET_OPTION_SESSION_TOKEN","isDemo":1,"uid":1234567,"platform":1}]'
 
-@web_app.route('/')
-def home():
-    return "Bot is running live!"
+# 2. بيانات بوت التليجرام الخاص بك (جلب الـ Token من BotFather)
+TELEGRAM_BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN_HERE'
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    web_app.run(host='0.0.0.0', port=port)
+# إعدادات حجم ونوع الصفقات الافتراضية
+TRADE_AMOUNT = 10     # مبلغ الصفقة بالدولار
+TRADE_DURATION = 60   # مدة الصفقة بالثواني (دقيقة واحدة)
+IS_DEMO = 1           # 1 للحساب التجريبي و 0 للحساب الحقيقي
 
-# ----------------------------------------------------
-# 2. أزواج التداول، الأسهم، والسلع المحددة من منصتك
-# ----------------------------------------------------
-PAIRS_OTC = [
-    # الأسهم (Stocks OTC)
-    "Intel OTC", "Marathon Digital OTC", "Tesla OTC", "ExxonMobil OTC", 
-    "Amazon OTC", "Palantir OTC", "FedEx OTC", "AMD OTC", "American Express OTC", "Alibaba OTC",
+# متغير عالمي للاحتفاظ باتصال الـ WebSocket الخاص بالمنصة
+pocket_ws = None
+
+# ==================== قائمة أزواج منصه Pocket Option المبرمجة ====================
+POCKET_OPTION_ASSETS = {
+    # أزواج العملات الاصطناعية الأكثر ربحية (OTC)
+    "EURUSD": "EURUSD_OTC",
+    "GBPUSD": "GBPUSD_OTC",
+    "USDJPY": "USDJPY_OTC",
+    "AUDCAD": "AUDCAD_OTC",
+    "USDCAD": "USDCAD_OTC",
+    "EURGBP": "EURGBP_OTC",
+    "EURJPY": "EURJPY_OTC",
+    "NZDUSD": "NZDUSD_OTC",
+    "AUDUSD": "AUDUSD_OTC",
+    "GBPJPY": "GBPJPY_OTC",
     
-    # السلع (Commodities OTC)
-    "Brent Oil OTC", "WTI Crude Oil OTC", "Silver OTC", "Gold OTC", 
-    "Natural Gas OTC", "Palladium OTC", "Platinum OTC",
+    # أزواج العملات في السوق الحقيقي المباشر (Real Market)
+    "EURUSD_REAL": "EURUSD",
+    "GBPUSD_REAL": "GBPUSD",
+    "USDJPY_REAL": "USDJPY",
+    "AUDUSD_REAL": "AUDUSD",
     
-    # العملات (Currencies OTC)
-    "USD/RUB OTC", "USD/VND OTC", "YER/USD OTC", "EUR/HUF OTC", "USD/THB OTC",
-    "USD/BDT OTC", "AED/CNY OTC", "BHD/CNY OTC", "OMR/CNY OTC", "USD/EGP OTC",
-    "USD/IDR OTC", "USD/INR OTC", "UAH/USD OTC", "EUR/RUB OTC", "QAR/CNY OTC",
-    "USD/MYR OTC", "TND/USD OTC", "LBP/USD OTC", "KES/USD OTC", "SAR/CNY OTC",
-    "USD/CNH OTC", "USD/PKR OTC", "USD/CLP OTC", "USD/SGD OTC", "EUR/TRY OTC",
-    "USD/MXN OTC", "MAD/USD OTC", "USD/ARS OTC", "USD/DZD OTC", "NGN/USD OTC",
-    "ZAR/USD OTC", "EUR/USD OTC", "AUD/JPY OTC", "EUR/CHF OTC", "AUD/CHF OTC",
-    "CAD/JPY OTC", "CAD/CHF OTC"
-]
+    # العملات الرقمية وسوق السلع والأسهم (Crypto & Commodities)
+    "BTCUSDT": "BTCUSDT_OTC",
+    "ETHUSDT": "ETHUSDT_OTC",
+    "GOLD": "XAUUSD_OTC",      # الذهب عبر الـ OTC
+    "SILVER": "XAGUSD_OTC",    # الفضة عبر الـ OTC
+}
 
-PAIRS_REAL = [
-    "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD", "USD/CHF",
-    "NZD/USD", "EUR/GBP", "EUR/JPY", "GBP/JPY", "AUD/JPY", "EUR/AUD",
-    "EUR/CAD", "EUR/CHF", "GBP/CAD", "GBP/CHF", "CAD/JPY", "CHF/JPY",
-    "AUD/CAD", "AUD/CHF"
-]
+# ==================== دالة معالجة وتنفيذ الصفقات ====================
 
-# ----------------------------------------------------
-# 3. دالة التحليل الفني (المدة ثابتة: دقيقة واحدة)
-# ----------------------------------------------------
-def analyze_market_conditions(price, middle_band, rsi, wpr):
-    if price > middle_band and rsi >= 52 and wpr >= -50:
-        return {
-            "direction": "صعود (CALL) 🟢",
-            "confidence": f"{random.randint(89, 96)}%",
-            "duration": "دقيقة واحدة (1m)",
-            "reason": "إيجابي من تقاطع المؤشرات والزخم فوق خط المنتصف."
-        }
-    elif price < middle_band and rsi <= 48 and wpr <= -50:
-        return {
-            "direction": "هبوط (PUT) 🔴",
-            "confidence": f"{random.randint(89, 96)}%",
-            "duration": "دقيقة واحدة (1m)",
-            "reason": "صفقة مع تقاطع سلبي ونزول مؤشر القوة النسبية تحت الخط."
-        }
-    elif price > middle_band and rsi > 50:
-        return {
-            "direction": "صعود سريع (CALL) 🟢",
-            "confidence": f"{random.randint(80, 88)}%",
-            "duration": "دقيقة واحدة (1m)",
-            "reason": "مناسب لصفقات السكالبيغ السريعة مع سيولة جيدة."
-        }
-    elif price < middle_band and rsi < 50:
-        return {
-            "direction": "هبوط سريع (PUT) 🔴",
-            "confidence": f"{random.randint(80, 88)}%",
-            "duration": "دقيقة واحدة (1m)",
-            "reason": "مناسب لصفقات السكالبيغ السريعة تحت خط المنتصف."
-        }
+def place_order(asset, action):
+    global pocket_ws
+    if pocket_ws and pocket_ws.sock and pocket_ws.sock.connected:
+        trade_request = [
+            "openOrder",
+            {
+                "asset": asset,
+                "amount": TRADE_AMOUNT,
+                "action": action.lower(),  # "call" للشراء أو "put" للبيع
+                "time": TRADE_DURATION,
+                "isDemo": IS_DEMO
+            }
+        ]
+        # إرسال الأمر الفوري عبر الـ WebSocket
+        pocket_ws.send('42' + json.dumps(trade_request))
+        print(f"🚀 [POCKET OPTION] تم تنفيذ صفقة {action.upper()} على {asset} بنجاح بقيمة ${TRADE_AMOUNT}")
     else:
-        return {
-            "direction": "تجنب الدخول (WAIT) ⏳",
-            "confidence": "غير آمن (< 50%)",
-            "duration": "-",
-            "reason": "حالة السوق غير واضحة؛ يمنع الدخول لحفظ رأس المال."
-        }
+        print("⚠️ [POCKET OPTION] الاتصال بالمنصة مقطوع! لا يمكن تنفيذ الصفقة.")
 
-# ----------------------------------------------------
-# 4. بناء الأزرار التفاعلية المنسقة
-# ----------------------------------------------------
-def build_main_keyboard():
-    keyboard = []
+# ==================== دالة قراءة وتفسير رسائل التليجرام ====================
+
+def parse_telegram_message(text):
+    text_upper = text.upper().replace("/", "").replace(" ", "").replace("-", "")
     
-    keyboard.append([InlineKeyboardButton("📊 --- الأسهم، السلع والعملات OTC ---", callback_data="ignore")])
-    row = []
-    for pair in PAIRS_OTC:
-        row.append(InlineKeyboardButton(pair, callback_data=f"analyze_{pair}"))
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-
-    keyboard.append([InlineKeyboardButton("🌐 --- العملات الحقيقية (Real) ---", callback_data="ignore")])
-    row = []
-    for pair in PAIRS_REAL:
-        row.append(InlineKeyboardButton(pair, callback_data=f"analyze_{pair}"))
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-
-    return InlineKeyboardMarkup(keyboard)
-
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply_markup = build_main_keyboard()
-    await update.message.reply_text(
-        "🚀 **Pocket Option - نظام التحليل الذكي والدقيق**\n\n"
-        "اختر الأصل أو الزوج المطلوب للتحليل الفوري:",
-        parse_mode="Markdown",
-        reply_markup=reply_markup
-    )
-
-async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "ignore":
-        return
-
-    if query.data == "main_menu":
-        reply_markup = build_main_keyboard()
-        await query.edit_message_text(
-            "📊 **اختر زوج العملات أو الأصل المطلوب تحليله:**",
-            parse_mode="Markdown",
-            reply_markup=reply_markup
-        )
-        return
-
-    selected_pair = query.data.replace("analyze_", "")
-
-    base_price = round(random.uniform(1.05000, 1.35000), 5)
-    middle_band = round(base_price + random.uniform(-0.00200, 0.00200), 5)
-    rsi = round(random.uniform(25.0, 80.0), 1)
-    wpr = round(random.uniform(-95.0, -5.0), 1)
-
-    result = analyze_market_conditions(base_price, middle_band, rsi, wpr)
-
-    response_text = (
-        f"=============================\n"
-        f"📊 **تقرير التحليل الفني الاحترافي** 📈\n"
-        f"=============================\n\n"
-        f"🔠 **الأصل المختار:** `{selected_pair}`\n"
-        f"🎯 **القرار والتوصية:** `{result['direction']}`\n"
-        f"📈 **نسبة الثقة والدقة:** `{result['confidence']}`\n"
-        f"⏳ **المدة المقترحة:** `{result['duration']}`\n"
-        f"💡 **السبب الفني:**\n{result['reason']}\n\n"
-        f"============================="
-    )
-
-    action_keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 تحليل نفس الزوج", callback_data=f"analyze_{selected_pair}")],
-        [InlineKeyboardButton("⬅️ العودة لكل الأصول", callback_data="main_menu")]
-    ])
-
-    await query.edit_message_text(response_text, parse_mode="Markdown", reply_markup=action_keyboard)
-
-# ----------------------------------------------------
-# 5. نقطة التشغيل الرئيسية
-# ----------------------------------------------------
-if __name__ == '__main__':
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-    if not BOT_TOKEN:
-        print("Error: BOT_TOKEN environment variable not found!")
-        sys.exit(1)
-
-    # تشغيل خادم Flask الخلفي للاستضافة
-    threading.Thread(target=run_flask, daemon=True).start()
-
-    # تشغيل البوت
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    matched_asset = None
+    action = None
     
-    app.add_handlers([
-        CommandHandler("start", start_command),
-        CallbackQueryHandler(handle_callback_query)
-    ])
+    # 1. البحث عن الزوج داخل نص الرسالة ومطابقته بالقائمة المبرمجة لدينا
+    for short_name, full_name in POCKET_OPTION_ASSETS.items():
+        if short_name in text_upper:
+            # التحقق إذا كانت الرسالة تطلب السوق الحقيقي عمداً أو الافتراضي OTC
+            if "REAL" in text_upper and f"{short_name}_REAL" in POCKET_OPTION_ASSETS:
+                matched_asset = POCKET_OPTION_ASSETS[f"{short_name}_REAL"]
+            else:
+                matched_asset = full_name
+            break
+            
+    # إذا لم نجد أياً من الأزواج المحددة، نقوم بمحاولة استخراج ديناميكية عامة
+    if not matched_asset:
+        dynamic_match = re.search(r'([A-Z]{6})', text_upper)
+        if dynamic_match:
+            base_asset = dynamic_match.group(0)
+            matched_asset = f"{base_asset}_OTC" # تحويل تلقائي لصيغة OTC
+        else:
+            return None, None
 
-    print("🤖 البوت يعمل الآن بكفاءة...")
-    app.run_polling()
+    # 2. تحديد الاتجاه (شراء CALL أم بيع PUT)
+    if any(word in text_upper for word in ["BUY", "CALL", "UP", "📈", "HIGHER"]):
+        action = "call"
+    elif any(word in text_upper for word in ["SELL", "PUT", "DOWN", "📉", "LOWER"]):
+        action = "put"
+        
+    return matched_asset, action
+
+def check_telegram_updates():
+    last_update_id = 0
+    url = f"https://telegram.org{TELEGRAM_BOT_TOKEN}/getUpdates"
+    
+    print("📡 [TELEGRAM] جاري الاستماع لقنوات البوت وقراءة إشارات التداول الحية...")
+    
+    while True:
+        try:
+            response = requests.get(url, params={"offset": last_update_id + 1, "timeout": 30}, timeout=35)
+            data = response.json()
+            
+            if "result" in data:
+                for update in data["result"]:
+                    last_update_id = update["update_id"]
+                    
+                    if "message" in update and "text" in update["message"]:
+                        msg_text = update["message"]["text"]
+                        print(f"📥 [TELEGRAM] رسالة جديدة: {msg_text}")
+                        
+                        asset, action = parse_telegram_message(msg_text)
+                        
+                        if asset and action:
+                            print(f"🎯 [ANALYSIS] تم رصد إشارة متوافقة: {asset} -> {action.upper()}")
+                            place_order(asset, action)
+                        else:
+                            print("ℹ️ [ANALYSIS] الرسالة لا تطابق شروط صفقة صالحة لمنصة Pocket Option.")
+                            
+        except Exception as e:
+            print(f"⚠️ [TELEGRAM] خطأ في جلب البيانات: {e}")
+        time.sleep(1)
+
+# ==================== إدارة اتصال الـ WebSocket للمنصة ====================
+
+def on_open(ws):
+    print("🔌 [POCKET OPTION] تم الاتصال بنجاح. جاري إرسال المصادقة...")
+    ws.send(POCKET_OPTION_SSID)
+
+def on_close(ws, close_status_code, close_msg):
+    print("❌ [POCKET OPTION] تم قطع الاتصال. إعادة المحاولة بعد 5 ثوانٍ...")
+    time.sleep(5)
+    connect_pocket_option()
+
+def connect_pocket_option():
+    global pocket_ws
+    ws_url = "wss://://pocketoption.com"
+    pocket_ws = websocket.WebSocketApp(ws_url, on_open=on_open, on_close=on_close)
+    ws_thread = threading.Thread(target=pocket_ws.run_forever)
+    ws_thread.daemon = True
+    ws_thread.start()
+
+# ==================== تشغيل النظام بالكامل ====================
+
+if __name__ == "__main__":
+    connect_pocket_option()
+    time.sleep(3)
+    check_telegram_updates()
