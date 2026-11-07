@@ -1,6 +1,1 @@
-python-telegram-bot>=20.0
-flask
-
-
-
-
+pip install python-telegram-bot websocket-client requests
