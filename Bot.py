@@ -12,7 +12,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Pocket Option Fast Scalping Bot is running actively!"
+    return "Pocket Option Master Bot is running!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -22,8 +22,9 @@ def run_flask():
 TOKEN = "8950126151:AAHQNS8au0YZjLCznMi2OBsLl7ZIjDNsHRA"
 bot = telebot.TeleBot(TOKEN)
 
-# قائمة أزواج العملات الشاملة (العادية و OTC)
+# قائمة جميع أزواج منصة بوكت آوبشن (العادية و OTC)
 POCKET_OPTION_PAIRS = {
+    # الأزواج العادية
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "USDJPY=X",
@@ -36,6 +37,8 @@ POCKET_OPTION_PAIRS = {
     "AUD/JPY": "AUDJPY=X",
     "EUR/AUD": "EURAUD=X",
     "USD/CHF": "USDCHF=X",
+    
+    # أزواج الـ OTC
     "EUR/USD [OTC]": "EURUSD=X",
     "GBP/USD [OTC]": "GBPUSD=X",
     "USD/JPY [OTC]": "USDJPY=X",
@@ -44,6 +47,8 @@ POCKET_OPTION_PAIRS = {
     "EUR/JPY [OTC]": "EURJPY=X",
     "GBP/JPY [OTC]": "GBPJPY=X",
     "EUR/GBP [OTC]": "EURGBP=X",
+    "AUD/CAD [OTC]": "AUDCAD=X",
+    "CHF/JPY [OTC]": "CHFJPY=X",
 }
 
 def calculate_indicators(df):
@@ -78,38 +83,35 @@ def analyze_market(pair_symbol, display_name):
         close = last_row['Close']
         upper = last_row['BB_Upper']
         lower = last_row['BB_Lower']
+        sma20 = last_row['SMA20']
         rsi = last_row['RSI']
         stoch_k = last_row['Stoch_K']
         stoch_d = last_row['Stoch_D']
         
         reasons = []
-        trade_decision = ""
         
-        # استراتيجية سريعة وحساسة للحركة الفورية (15 ثانية إلى 3 دقائق حسب اختيارك)
-        if close >= upper:
-            trade_decision = "⚠️ تنبيه حذر (قريب من الحد العلوي Bollinger) | ⏱️ الوقت المقترح: 30 ثانية - دقيقة"
-            reasons.append("السعر لامس الحد العلوي، احذر من الانعكاس السريع.")
-        elif close <= lower:
-            trade_decision = "⚠️ تنبيه حذر (قريب من الحد السفلي Bollinger) | ⏱️ الوقت المقترح: 30 ثانية - دقيقة"
-            reasons.append("السعر لامس الحد السفلي، احذر من الارتداد السريع.")
+        # حسم الإشارة بشكل قطعي (شراء أو بيع) بناءً على التقاطعات والمؤشرات
+        if stoch_k >= stoch_d and rsi >= 45:
+            trade_decision = "🟢 نوع الصفقة: شراء (CALL) | ⏱️ المدة: من 5 ثوانٍ إلى 3 دقائق (اختر وقتك بنفسك)"
+            reasons.append(f"تقاطع إيجابي في Stochastic (%K: {stoch_k:.1f} فوق %D: {stoch_d:.1f}).")
+            reasons.append(f"مؤشر RSI عند {rsi:.1f} يدعم الاتجاه الصاعد.")
+            reasons.append(f"السعر قرب أو فوق خط المنتصف SMA20 ({sma20:.5f}).")
         else:
-            # إشارات سريعة تعتمد على تقاطع المؤشرات لتعطيك صفقة فورية
-            if stoch_k > stoch_d and rsi >= 48:
-                trade_decision = "🟢 صفقة شراء (CALL) | ⏱️ الوقت: من 15 ثانية إلى 3 دقائق (حسب رغبتك)"
-                reasons.append(f"تقاطع إيجابي سريع في Stochastic (%K: {stoch_k:.1f} فوق %D: {stoch_d:.1f}).")
-                reasons.append(f"مؤشر RSI يدعم الصعود عند مستوى {rsi:.1f}.")
-            elif stoch_k < stoch_d and rsi <= 52:
-                trade_decision = "🔴 صفقة بيع (PUT) | ⏱️ الوقت: من 15 ثانية إلى 3 دقائق (حسب رغبتك)"
-                reasons.append(f"تقاطع سلبي سريع في Stochastic (%K: {stoch_k:.1f} تحت %D: {stoch_d:.1f}).")
-                reasons.append(f"مؤشر RSI يدعم الهبوط عند مستوى {rsi:.1f}.")
-            else:
-                trade_decision = "🟢 صفقة سريعة حسب الزخم (شراء أو بيع) | ⏱️ الوقت: دقيقة واحدة"
-                reasons.append("حركة السوق مستقرة، اختر وقت صفقتك (من 30 ثانية لـ 3 دقائق) بناءً على حركة الشمعة.")
+            trade_decision = "🔴 نوع الصفقة: بيع (PUT) | ⏱️ المدة: من 5 ثوانٍ إلى 3 دقائق (اختر وقتك بنفسك)"
+            reasons.append(f"تقاطع سلبي في Stochastic (%K: {stoch_k:.1f} تحت %D: {stoch_d:.1f}).")
+            reasons.append(f"مؤشر RSI عند {rsi:.1f} يدعم الاتجاه الهابط.")
+            reasons.append(f"السعر قرب أو تحت خط المنتصف SMA20 ({sma20:.5f}).")
+
+        # إظهار تنبيه إذا كان السعر عند حواف البولنجر
+        if close >= upper:
+            reasons.append(f"⚠️ تنبيه: السعر يلامس الحد العلوي للبولنجر ({upper:.5f}).")
+        elif close <= lower:
+            reasons.append(f"⚠️ تنبيه: السعر يلامس الحد السفلي للبولنجر ({lower:.5f}).")
 
         report = f"{trade_decision}\n\n"
         report += f"📊 **الزوج:** {display_name}\n"
         report += f"💰 **السعر الحالي:** {close:.5f}\n\n"
-        report += "🔍 **الأسباب الفنية السريعة:**\n"
+        report += "🔍 **الأسباب الفنية:**\n"
         for r in reasons:
             report += f"• {r}\n"
             
@@ -117,7 +119,7 @@ def analyze_market(pair_symbol, display_name):
     except Exception as e:
         return f"❌ حدث خطأ أثناء تحليل الزوج: {str(e)}"
 
-# دالة لإنشاء أزواج العملات على شكل أزرار
+# إنشاء الأزرار لجميع الأزواج
 def get_pairs_keyboard():
     markup = InlineKeyboardMarkup(row_width=2)
     buttons = []
@@ -129,8 +131,8 @@ def get_pairs_keyboard():
 @bot.message_handler(commands=['start', 'pairs'])
 def send_welcome(message):
     welcome_text = (
-        "⚡ **بوت السكالبينج السريع لمنصة بوكت آوبشن**\n\n"
-        "اختر الزوج لتحليل الحركة السريعة فوراً (الوقت يرجع لك من 15 ثانية إلى 3 دقائق):"
+        "🚀 **بوت بوكت آوبشن الاحترافي (شراء / بيع مؤكد)**\n\n"
+        "اختر الزوج من الأزرار بالأسفل لتحصل على القرار الفوري والمدة (من 5 ثوانٍ إلى 3 دقائق):"
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=get_pairs_keyboard(), parse_mode="Markdown")
 
@@ -139,9 +141,9 @@ def callback_query(call):
     pair_input = call.data.replace("analyze_", "")
     if pair_input in POCKET_OPTION_PAIRS:
         symbol_code = POCKET_OPTION_PAIRS[pair_input]
-        bot.answer_callback_query(call.id, text=f"جاري فحص حركة {pair_input}...")
+        bot.answer_callback_query(call.id, text=f"جاري جلب إشارة {pair_input}...")
         
-        msg = bot.send_message(call.message.chat.id, f"⚡ جاري تحليل الزخم السريع لزوج **{pair_input}**...", parse_mode="Markdown")
+        msg = bot.send_message(call.message.chat.id, f"⚡ جاري تحليل زوج **{pair_input}**...", parse_mode="Markdown")
         
         analysis_result = analyze_market(symbol_code, pair_input)
         
@@ -151,5 +153,5 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.start()
     
-    print("Fast Bot and Web Server are running...")
+    print("Master Bot is running successfully...")
     bot.infinity_polling()
