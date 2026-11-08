@@ -1,4 +1,5 @@
-python-telegram-bot==20.8
+pyTelegramBotAPI==4.26.0
+requests==2.32.3
 websockets==12.0
 pandas==2.2.2
 numpy==1.26.4
