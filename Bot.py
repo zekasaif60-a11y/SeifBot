@@ -124,3 +124,4 @@ if __name__ == "__main__":
   t = threading.Thread(target=trading_bot_loop)
   t.start()
   run_web()
+# تحديث تشغيل البوت
