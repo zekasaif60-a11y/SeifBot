@@ -6,9 +6,9 @@ import telebot
 import yfinance as yf
 from flask import Flask
 
-# ==================== إعدادات التليجرام ====================
-TOKEN = "ضع_توكن_البوت_هنا"
-CHAT_ID = "ضع_الـ_شات_آي_دي_هنا"
+# ==================== إعدادات التليجرام (جاهزة بالبيانات) ====================
+TOKEN = "8950126151:AAEzmSDqtiyVJtsfyLaeSf853oL2P2DAykg"
+CHAT_ID = "1706853546"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask("")
@@ -68,20 +68,20 @@ def trading_bot_loop():
         if isinstance(df.columns, pd.MultiIndex):
           df.columns = df.columns.get_level_values(0)
 
-        # 1. Bollinger Bands
+        # 1. Bollinger Bands (20)
         df["MA20"] = df["Close"].rolling(window=20).mean()
         df["STD"] = df["Close"].rolling(window=20).std()
         df["Upper"] = df["MA20"] + (df["STD"] * 2)
         df["Lower"] = df["MA20"] - (df["STD"] * 2)
 
-        # 2. RSI
+        # 2. RSI (14)
         delta = df["Close"].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         df["RSI"] = 100 - (100 / (1 + rs))
 
-        # 3. Stochastic
+        # 3. Stochastic (%K & %D)
         low_min = df["Low"].rolling(window=14).min()
         high_max = df["High"].rolling(window=14).max()
         df["Stoch_K"] = (
@@ -97,7 +97,7 @@ def trading_bot_loop():
         stoch_d = df["Stoch_D"].iloc[-1]
         pair_name = symbol.replace("=X", "")
 
-        # الشروط الصارمة للصفقات السريعة
+        # الشروط الصارمة للصققات السريعة (2-3 دقائق)
         if close <= lower and rsi < 30 and stoch_k > stoch_d:
           msg = (
               f"🟢 **فرصة صفقة صعود (شراء)**\n🔹 الزوج: `{pair_name}`\n📊 السعر:"
@@ -119,7 +119,6 @@ def trading_bot_loop():
 
 
 if __name__ == "__main__":
-  # تشغيل التحليل في الخلفية وتشغيل فلاسك في الواجهة لضمان استمرار البوت
   t = threading.Thread(target=trading_bot_loop)
   t.start()
   run_web()
