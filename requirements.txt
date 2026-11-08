@@ -1,4 +1,4 @@
 python-telegram-bot==20.8
-websockets
-pandas
-numpy
+websockets==12.0
+pandas==2.2.2
+numpy==1.26.4
