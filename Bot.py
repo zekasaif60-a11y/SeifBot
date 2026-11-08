@@ -12,7 +12,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Pocket Option Bot is running actively!"
+    return "Pocket Option Bot (Normal & OTC) is running actively!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -22,8 +22,9 @@ def run_flask():
 TOKEN = "8950126151:AAHQNS8au0YZjLCznMi2OBsLl7ZIjDNsHRA"
 bot = telebot.TeleBot(TOKEN)
 
-# قائمة أزواج العملات المتاحة في منصة بوكت آوبشن
+# قائمة أزواج العملات الشاملة (العادية و OTC)
 POCKET_OPTION_PAIRS = {
+    # الأزواج العادية (Regular)
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "USDJPY=X",
@@ -36,6 +37,16 @@ POCKET_OPTION_PAIRS = {
     "AUD/JPY": "AUDJPY=X",
     "EUR/AUD": "EURAUD=X",
     "USD/CHF": "USDCHF=X",
+    
+    # أزواج الـ OTC (مربوطة ببيانات السوق الحية للتحليل الفني الدقيق)
+    "EUR/USD [OTC]": "EURUSD=X",
+    "GBP/USD [OTC]": "GBPUSD=X",
+    "USD/JPY [OTC]": "USDJPY=X",
+    "AUD/USD [OTC]": "AUDUSD=X",
+    "USD/CAD [OTC]": "USDCAD=X",
+    "EUR/JPY [OTC]": "EURJPY=X",
+    "GBP/JPY [OTC]": "GBPJPY=X",
+    "EUR/GBP [OTC]": "EURGBP=X",
 }
 
 def calculate_indicators(df):
@@ -57,12 +68,12 @@ def calculate_indicators(df):
     
     return df
 
-def analyze_market(pair_symbol):
+def analyze_market(pair_symbol, display_name):
     try:
         ticker = yf.Ticker(pair_symbol)
         df = ticker.history(period="1d", interval="1m")
         if df.empty or len(df) < 30:
-            return "❌ بيانات السوق غير كافية حالياً لهذا الزوج."
+            return f"❌ بيانات السوق غير كافية حالياً لهذا الزوج ({display_name})."
         
         df = calculate_indicators(df)
         
@@ -79,32 +90,32 @@ def analyze_market(pair_symbol):
         trade_decision = ""
         
         if close >= upper:
-            trade_decision = "❌ تجنب الدخول (السوق غير مناسب - تشبع شرائي عند حواف Bollinger)"
-            reasons.append("السعر يلامس أو يخترق الحد العلوي للـ Bollinger Bands.")
+            trade_decision = "❌ تجنب الدخول | ⏱️ المدة: غير متاح (تشبع شرائي عند حواف Bollinger)"
+            reasons.append("السعر يلامس أو يخترق الحد العلوي للـ Bollinger Bands (منطقة خطيرة).")
         elif close <= lower:
-            trade_decision = "❌ تجنب الدخول (السوق غير مناسب - تشبع بيعي عند حواف Bollinger)"
-            reasons.append("السعر يلامس أو يخترق الحد السفلي للـ Bollinger Bands.")
+            trade_decision = "❌ تجنب الدخول | ⏱️ المدة: غير متاح (تشبع بيعي عند حواف Bollinger)"
+            reasons.append("السعر يلامس أو يخترق الحد السفلي للـ Bollinger Bands (منطقة خطيرة).")
         elif abs(close - sma20) < (upper - lower) * 0.15:
             if rsi > 50 and stoch_k > stoch_d:
-                trade_decision = "🟢 نوع الصفقة: شراء (CALL) | ⏱️ المدة: دقيقة إلى 3 دقائق (حسب حركة الشمعة)"
+                trade_decision = "🟢 صفقة شراء (BUY / CALL) | ⏱️ المدة: من 30 ثانية إلى 3 دقائق"
                 reasons.append("ارتداد واضح للسعر من خط المنتصف (SMA20) مع اتجاه صاعد.")
                 reasons.append(f"مؤشر RSI عند {rsi:.2f} فوق مستوى 50.")
                 reasons.append(f"تقاطع إيجابي في Stochastic (%K: {stoch_k:.2f} فوق %D: {stoch_d:.2f}).")
             elif rsi < 50 and stoch_k < stoch_d:
-                trade_decision = "🔴 نوع الصفقة: بيع (PUT) | ⏱️ المدة: دقيقة إلى 3 دقائق (حسب حركة الشمعة)"
+                trade_decision = "🔴 صفقة بيع (SELL / PUT) | ⏱️ المدة: من 30 ثانية إلى 3 دقائق"
                 reasons.append("ارتداد واضح للسعر من خط المنتصف (SMA20) مع اتجاه هابط.")
                 reasons.append(f"مؤشر RSI عند {rsi:.2f} تحت مستوى 50.")
                 reasons.append(f"تقاطع سلبي في Stochastic (%K: {stoch_k:.2f} تحت %D: {stoch_d:.2f}).")
             else:
                 trade_decision = "⏳ انتظار (مؤشرات غير متوافقة مع المنتصف)"
-                reasons.append("السعر قرب الخط الأوسط لكن مؤشرات RSI و Stochastic لا تدعم الدخول.")
+                reasons.append("السعر قرب الخط الأوسط لكن مؤشرات RSI و Stochastic لا تدعم الدخول المؤكد.")
         else:
-            trade_decision = "⏳ انتظار (السعر في منتصف القناة)"
-            reasons.append("لا يوجد ارتداد واضح أو إشارة مؤكدة من الخط الأوسط.")
+            trade_decision = "⏳ انتظار (السعر في منتصف القناة - لا يوجد ارتداد واضح)"
+            reasons.append("السعر بعيد عن الخط الأوسط ولا توجد إشارة قوية للدخول.")
             
-        # يبدأ الرد بنوع الصفقة والمدة أولاً تماماً كما طلبت
+        # يبدأ التقرير بنوع الصفقة والمدة أولاً تماماً كما طلبت
         report = f"{trade_decision}\n\n"
-        report += f"📊 **الزوج:** {pair_symbol}\n"
+        report += f"📊 **الزوج:** {display_name}\n"
         report += f"💰 **السعر الحالي:** {close:.5f}\n\n"
         report += "🔍 **الأسباب الفنية:**\n"
         for r in reasons:
@@ -114,10 +125,9 @@ def analyze_market(pair_symbol):
     except Exception as e:
         return f"❌ حدث خطأ أثناء تحليل الزوج: {str(e)}"
 
-# دالة لإنشاء أزواج العملات على شكل أزرار
+# دالة لإنشاء أزواج العملات (العادية و OTC) على شكل أزرار منظمة
 def get_pairs_keyboard():
-    markup = InlineKeyboardMarkup()
-    markup.row_width = 2
+    markup = InlineKeyboardMarkup(row_width=2)
     buttons = []
     for pair_name in POCKET_OPTION_PAIRS.keys():
         buttons.append(InlineKeyboardButton(pair_name, callback_data=f"analyze_{pair_name}"))
@@ -127,7 +137,7 @@ def get_pairs_keyboard():
 @bot.message_handler(commands=['start', 'pairs'])
 def send_welcome(message):
     welcome_text = (
-        "اهلاً بك يا زكريا في بوت تحليل منصة بوكت آوبشن الاحترافي! 🚀\n\n"
+        "اهلاً بك يا زكريا في بوت تحليل منصة بوكت آوبشن (عادي و OTC) 🚀\n\n"
         "اختر الزوج الذي تريد تحليله مباشرة بضغطة زر:"
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=get_pairs_keyboard(), parse_mode="Markdown")
@@ -142,7 +152,7 @@ def callback_query(call):
         
         msg = bot.send_message(call.message.chat.id, f"⏳ جاري فحص المؤشرات الفنية لزوج **{pair_input}**...", parse_mode="Markdown")
         
-        analysis_result = analyze_market(symbol_code)
+        analysis_result = analyze_market(symbol_code, pair_input)
         
         bot.edit_message_text(analysis_result, chat_id=call.message.chat.id, message_id=msg.message_id, reply_markup=get_pairs_keyboard(), parse_mode="Markdown")
 
