@@ -1,84 +1,120 @@
-import random
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import time
+import requests
+import pandas as pd
+import yfinance as yf
 
-# Token البوت الخاص بك
-TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+# ==================== إعدادات تيليجرام ====================
+# ضع هنا توكن البوت الذي تحصل عليه من BotFather
+TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+# ضع هنا معرف الشات الخاص بك (Chat ID)
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"
 
-# قائمة شاملة لأزواج منصة Pocket Option (عادية و OTC)
-CURRENCY_PAIRS = [
-    # Forex Majors & Crosses
-    "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "EURGBP", "EURJPY", "GBPJPY",
-    # OTC Pairs (الأكثر تداولاً في المنصة)
-    "EURUSD-OTC", "GBPUSD-OTC", "USDJPY-OTC", "AUDUSD-OTC", "USDCAD-OTC", 
-    "EURGBP-OTC", "EURJPY-OTC", "GBPJPY-OTC", "NZDUSD-OTC", "BRLUSD-OTC", "ZARUSD-OTC"
+def send_telegram_message(message):
+    """إرسال الإشارة فوراً على التيليجرام"""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"خطأ في إرسال التيليجرام: {e}")
+
+# ==================== قائمة الأزواج (28 زوجاً) ====================
+ALL_FOREX_PAIRS = [
+    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X", "NZDUSD=X",
+    "EURGBP=X", "EURJPY=X", "EURCAD=X", "EURAUD=X", "EURNZD=X", "EURCHF=X",
+    "GBPJPY=X", "GBPCAD=X", "GBPAUD=X", "GBPNZD=X", "GBPCHF=X",
+    "AUDJPY=X", "AUDCAD=X", "AUDNZD=X", "AUDCHF=X",
+    "NZDJPY=X", "NZDCAD=X", "NZDCHF=X",
+    "CADJPY=X", "CADCHF=X", "CHFJPY=X"
 ]
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_message = (
-        "🤖 **مرحباً بك في بوت إشارات Pocket Option الشامل**\n\n"
-        "الأوامر المتاحة:\n"
-        "🔹 `/signal [الزوج] [1M أو 5M]` - لإرسال إشارة لزوج معين.\n"
-        "🔹 `/all_pairs` - لعرض قائمة الأزواج المتاحة في النظام.\n\n"
-        "مثال: `/signal EURUSD-OTC 1M`"
-    )
-    await update.message.reply_text(welcome_message, parse_mode='Markdown')
+def analyze_and_notify():
+    print("\n" + "="*50)
+    print(" جاري مسح السوق وفحص الـ 28 زوجاً على فريم الدقيقة...")
+    print("="*50)
 
-async def list_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pairs_list = "\n".join([f"📈 {pair}" for pair in CURRENCY_PAIRS])
-    await update.message.reply_text(
-        f"📋 **قائمة الأزواج المتاحة في البوت:**\n\n{pairs_list}", 
-        parse_mode='Markdown'
-    )
+    signals_count = 0
+    for symbol in ALL_FOREX_PAIRS:
+        try:
+            df = yf.download(symbol, period="1d", interval="1m", progress=False)
+            if df.empty or len(df) < 30:
+                continue
+                
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
 
-async def generate_signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
-    
-    # التحقق من المدخلات أو اختيار زوج عشوائي وإطار زمني افتراضي
-    pair = args[0].upper() if len(args) > 0 else random.choice(CURRENCY_PAIRS)
-    timeframe = args[1].upper() if len(args) > 1 else "M1"
-    
-    if pair not in CURRENCY_PAIRS:
-        await update.message.reply_text("⚠️ عذراً، هذا الزوج غير مدرج في القائمة. اكتب `/all_pairs` لعرض الأزواج المتاحة.")
-        return
+            # 1. Bollinger Bands (20)
+            df['MA20'] = df['Close'].rolling(window=20).mean()
+            df['STD'] = df['Close'].rolling(window=20).std()
+            df['Upper'] = df['MA20'] + (df['STD'] * 2)
+            df['Lower'] = df['MA20'] - (df['STD'] * 2)
 
-    # محاكاة اتجاه الصفقة والتفاصيل الفنية
-    direction = random.choice(["CALL 🟢 (BUY)", "PUT 🔴 (SELL)"])
-    trend = "Uptrend" if "CALL" in direction else "Downtrend"
-    forecast = f"{random.randint(80, 98)}.{random.randint(10, 99)}%"
-    payout = f"{random.randint(75, 92)}.%";
-    
-    if timeframe == "M5":
-        message = (
-            f"👑 **VIP - 5Min - POCKET OPTION** 👑\n"
-            f"📊 **VIP SIGNAL | Strategy M5**\n\n"
-            f"🔹 **{pair} - {direction}**\n"
-            f"🔹 **Expiration:** 5 minutes (M5)\n"
-            f"🔹 **If loss, do up to 2 Gale.**\n\n"
-            f"🎯 **Forecast:** {forecast}\n"
-            f"💰 **Payout:** {payout}\n\n"
-            f"📲 [Click to open broker](https://pocketoption.com)"
-        )
-    else:
-        message = (
-            f"📊 **POCKET OPTION (FREE {timeframe})**\n\n"
-            f"💎 **{pair}**\n"
-            f"⏰ {timeframe}\n"
-            f"👉 {direction}\n\n"
-            f"📈 **Tend:** {trend}\n"
-            f"🎯 **Forecast:** {forecast}\n"
-            f"💰 **Payout:** {payout}\n\n"
-            f"📲 [Click to open broker](https://pocketoption.com)"
-        )
+            # 2. RSI (14)
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            df['RSI'] = 100 - (100 / (1 + rs))
 
-    await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+            # 3. Stochastic (%K & %D)
+            low_min = df['Low'].rolling(window=14).min()
+            high_max = df['High'].rolling(window=14).max()
+            df['Stoch_K'] = ((df['Close'] - low_min) / (high_max - low_min)) * 100
+            df['Stoch_D'] = df['Stoch_K'].rolling(window=3).mean()
 
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("all_pairs", list_pairs))
-    app.add_handler(CommandHandler("signal", generate_signal))
-    
-    print("Powerful Pocket Option Bot is running...")
-    app.run_polling()
+            # جلب آخر شمعة
+            close = df['Close'].iloc[-1]
+            upper = df['Upper'].iloc[-1]
+            lower = df['Lower'].iloc[-1]
+            rsi = df['RSI'].iloc[-1]
+            stoch_k = df['Stoch_K'].iloc[-1]
+            stoch_d = df['Stoch_D'].iloc[-1]
+            pair_name = symbol.replace("=X", "")
+
+            # الشروط الصارمة للدخول (صفقات سريعة 2-3 دقائق)
+            if close <= lower and rsi < 30 and stoch_k > stoch_d:
+                msg = (
+                    f"🚨 **فرصة صفقة صعود (شراء)** 🟢\n"
+                    f"-----------------------------\n"
+                    f"🔹 الزوج: `{pair_name}`\n"
+                    f"⏱️ الفريم: دقيقة واحدة (صفقة 2-3 دقائق)\n"
+                    f"📊 السعر: `{close:.5f}`\n"
+                    f"📉 مؤشر RSI: `{rsi:.1f}` (تشبع بيعي)\n"
+                    f"📈 مؤشر Stoch_K: `{stoch_k:.1f}`\n"
+                    f"💡 الحالة: ارتداد مؤكد من الحد السفلي للبولنجر."
+                )
+                print(f"[تم رصد فرصة صعود لـ {pair_name}]")
+                send_telegram_message(msg)
+                signals_count += 1
+
+            elif close >= upper and rsi > 70 and stoch_k < stoch_d:
+                msg = (
+                    f"🚨 **فرصة صفقة هبوط (بيع)** 🔴\n"
+                    f"-----------------------------\n"
+                    f"🔹 الزوج: `{pair_name}`\n"
+                    f"⏱️ الفريم: دقيقة واحدة (صفقة 2-3 دقائق)\n"
+                    f"📊 السعر: `{close:.5f}`\n"
+                    f"📈 مؤشر RSI: `{rsi:.1f}` (تشبع شرائي)\n"
+                    f"📉 مؤشر Stoch_K: `{stoch_k:.1f}`\n"
+                    f"💡 الحالة: ارتداد مؤكد من الحد العلوي للبولنجر."
+                )
+                print(f"[تم رصد فرصة هبوط لـ {pair_name}]")
+                send_telegram_message(msg)
+                signals_count += 1
+
+        except Exception as e:
+            continue
+
+    if signals_count == 0:
+        print("⏳ جاري الفحص... لا توجد فرص مكتملة الشروط حالياً في السوق.")
+
+if __name__ == "__main__":
+    print("🤖 بوت التنبيهات يعمل الآن...")
+    while True:
+        analyze_and_notify()
+        # يفحص السوق بالكامل كل دقيقة
+        time.sleep(60)
