@@ -6,8 +6,8 @@ import telebot
 import yfinance as yf
 from flask import Flask
 
-# ==================== إعدادات التليجرام (مضبوطة كاملاً) ====================
-TOKEN = "8950126151:AAEzmSDqtiyVJtsfyLaeSf853oL2P2DAykg"
+# ==================== إعدادات التليجرام (بالتوكن الجديد) ====================
+TOKEN = "8950126151:AAEisKfh2D07mH2mnf2E-ISnT8Mt_cH7Gyk"
 CHAT_ID = "1706853546"
 
 bot = telebot.TeleBot(TOKEN)
@@ -100,15 +100,17 @@ def trading_bot_loop():
         # الشروط الصارمة لصفقات (2-3 دقائق)
         if close <= lower and rsi < 30 and stoch_k > stoch_d:
           msg = (
-              f"🟢 **فرصة صفقة صعود (شراء)**\n🔹 الزوج: `{pair_name}`\n📊 السعر:"
-              f" `{close:.5f}`\n📉 RSI: `{rsi:.1f}`"
+              f"🟢 **فرصة صفقة صعود (شراء)**\n🔹 الزوج:"
+              f" `{pair_name}`\n📊 السعر: `{close:.5f}`\n📉 RSI:"
+              f" `{rsi:.1f}`"
           )
           bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
 
         elif close >= upper and rsi > 70 and stoch_k < stoch_d:
           msg = (
-              f"🔴 **فرصة صفقة هبوط (بيع)**\n🔹 الزوج: `{pair_name}`\n📊 السعر:"
-              f" `{close:.5f}`\n📈 RSI: `{rsi:.1f}`"
+              f"🔴 **فرصة صفقة هبوط (بيع)**\n🔹 الزوج:"
+              f" `{pair_name}`\n📊 السعر: `{close:.5f}`\n📈 RSI:"
+              f" `{rsi:.1f}`"
           )
           bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
 
