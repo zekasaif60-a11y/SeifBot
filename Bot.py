@@ -12,7 +12,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Pocket Option Bot (Normal & OTC) is running actively!"
+    return "Pocket Option Fast Scalping Bot is running actively!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -24,7 +24,6 @@ bot = telebot.TeleBot(TOKEN)
 
 # قائمة أزواج العملات الشاملة (العادية و OTC)
 POCKET_OPTION_PAIRS = {
-    # الأزواج العادية (Regular)
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "USDJPY=X",
@@ -37,8 +36,6 @@ POCKET_OPTION_PAIRS = {
     "AUD/JPY": "AUDJPY=X",
     "EUR/AUD": "EURAUD=X",
     "USD/CHF": "USDCHF=X",
-    
-    # أزواج الـ OTC (مربوطة ببيانات السوق الحية للتحليل الفني الدقيق)
     "EUR/USD [OTC]": "EURUSD=X",
     "GBP/USD [OTC]": "GBPUSD=X",
     "USD/JPY [OTC]": "USDJPY=X",
@@ -72,14 +69,13 @@ def analyze_market(pair_symbol, display_name):
     try:
         ticker = yf.Ticker(pair_symbol)
         df = ticker.history(period="1d", interval="1m")
-        if df.empty or len(df) < 30:
+        if df.empty or len(df) < 20:
             return f"❌ بيانات السوق غير كافية حالياً لهذا الزوج ({display_name})."
         
         df = calculate_indicators(df)
         
         last_row = df.iloc[-1]
         close = last_row['Close']
-        sma20 = last_row['SMA20']
         upper = last_row['BB_Upper']
         lower = last_row['BB_Lower']
         rsi = last_row['RSI']
@@ -89,35 +85,31 @@ def analyze_market(pair_symbol, display_name):
         reasons = []
         trade_decision = ""
         
+        # استراتيجية سريعة وحساسة للحركة الفورية (15 ثانية إلى 3 دقائق حسب اختيارك)
         if close >= upper:
-            trade_decision = "❌ تجنب الدخول | ⏱️ المدة: غير متاح (تشبع شرائي عند حواف Bollinger)"
-            reasons.append("السعر يلامس أو يخترق الحد العلوي للـ Bollinger Bands (منطقة خطيرة).")
+            trade_decision = "⚠️ تنبيه حذر (قريب من الحد العلوي Bollinger) | ⏱️ الوقت المقترح: 30 ثانية - دقيقة"
+            reasons.append("السعر لامس الحد العلوي، احذر من الانعكاس السريع.")
         elif close <= lower:
-            trade_decision = "❌ تجنب الدخول | ⏱️ المدة: غير متاح (تشبع بيعي عند حواف Bollinger)"
-            reasons.append("السعر يلامس أو يخترق الحد السفلي للـ Bollinger Bands (منطقة خطيرة).")
-        elif abs(close - sma20) < (upper - lower) * 0.15:
-            if rsi > 50 and stoch_k > stoch_d:
-                trade_decision = "🟢 صفقة شراء (BUY / CALL) | ⏱️ المدة: من 30 ثانية إلى 3 دقائق"
-                reasons.append("ارتداد واضح للسعر من خط المنتصف (SMA20) مع اتجاه صاعد.")
-                reasons.append(f"مؤشر RSI عند {rsi:.2f} فوق مستوى 50.")
-                reasons.append(f"تقاطع إيجابي في Stochastic (%K: {stoch_k:.2f} فوق %D: {stoch_d:.2f}).")
-            elif rsi < 50 and stoch_k < stoch_d:
-                trade_decision = "🔴 صفقة بيع (SELL / PUT) | ⏱️ المدة: من 30 ثانية إلى 3 دقائق"
-                reasons.append("ارتداد واضح للسعر من خط المنتصف (SMA20) مع اتجاه هابط.")
-                reasons.append(f"مؤشر RSI عند {rsi:.2f} تحت مستوى 50.")
-                reasons.append(f"تقاطع سلبي في Stochastic (%K: {stoch_k:.2f} تحت %D: {stoch_d:.2f}).")
-            else:
-                trade_decision = "⏳ انتظار (مؤشرات غير متوافقة مع المنتصف)"
-                reasons.append("السعر قرب الخط الأوسط لكن مؤشرات RSI و Stochastic لا تدعم الدخول المؤكد.")
+            trade_decision = "⚠️ تنبيه حذر (قريب من الحد السفلي Bollinger) | ⏱️ الوقت المقترح: 30 ثانية - دقيقة"
+            reasons.append("السعر لامس الحد السفلي، احذر من الارتداد السريع.")
         else:
-            trade_decision = "⏳ انتظار (السعر في منتصف القناة - لا يوجد ارتداد واضح)"
-            reasons.append("السعر بعيد عن الخط الأوسط ولا توجد إشارة قوية للدخول.")
-            
-        # يبدأ التقرير بنوع الصفقة والمدة أولاً تماماً كما طلبت
+            # إشارات سريعة تعتمد على تقاطع المؤشرات لتعطيك صفقة فورية
+            if stoch_k > stoch_d and rsi >= 48:
+                trade_decision = "🟢 صفقة شراء (CALL) | ⏱️ الوقت: من 15 ثانية إلى 3 دقائق (حسب رغبتك)"
+                reasons.append(f"تقاطع إيجابي سريع في Stochastic (%K: {stoch_k:.1f} فوق %D: {stoch_d:.1f}).")
+                reasons.append(f"مؤشر RSI يدعم الصعود عند مستوى {rsi:.1f}.")
+            elif stoch_k < stoch_d and rsi <= 52:
+                trade_decision = "🔴 صفقة بيع (PUT) | ⏱️ الوقت: من 15 ثانية إلى 3 دقائق (حسب رغبتك)"
+                reasons.append(f"تقاطع سلبي سريع في Stochastic (%K: {stoch_k:.1f} تحت %D: {stoch_d:.1f}).")
+                reasons.append(f"مؤشر RSI يدعم الهبوط عند مستوى {rsi:.1f}.")
+            else:
+                trade_decision = "🟢 صفقة سريعة حسب الزخم (شراء أو بيع) | ⏱️ الوقت: دقيقة واحدة"
+                reasons.append("حركة السوق مستقرة، اختر وقت صفقتك (من 30 ثانية لـ 3 دقائق) بناءً على حركة الشمعة.")
+
         report = f"{trade_decision}\n\n"
         report += f"📊 **الزوج:** {display_name}\n"
         report += f"💰 **السعر الحالي:** {close:.5f}\n\n"
-        report += "🔍 **الأسباب الفنية:**\n"
+        report += "🔍 **الأسباب الفنية السريعة:**\n"
         for r in reasons:
             report += f"• {r}\n"
             
@@ -125,7 +117,7 @@ def analyze_market(pair_symbol, display_name):
     except Exception as e:
         return f"❌ حدث خطأ أثناء تحليل الزوج: {str(e)}"
 
-# دالة لإنشاء أزواج العملات (العادية و OTC) على شكل أزرار منظمة
+# دالة لإنشاء أزواج العملات على شكل أزرار
 def get_pairs_keyboard():
     markup = InlineKeyboardMarkup(row_width=2)
     buttons = []
@@ -137,20 +129,19 @@ def get_pairs_keyboard():
 @bot.message_handler(commands=['start', 'pairs'])
 def send_welcome(message):
     welcome_text = (
-        "اهلاً بك يا زكريا في بوت تحليل منصة بوكت آوبشن (عادي و OTC) 🚀\n\n"
-        "اختر الزوج الذي تريد تحليله مباشرة بضغطة زر:"
+        "⚡ **بوت السكالبينج السريع لمنصة بوكت آوبشن**\n\n"
+        "اختر الزوج لتحليل الحركة السريعة فوراً (الوقت يرجع لك من 15 ثانية إلى 3 دقائق):"
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=get_pairs_keyboard(), parse_mode="Markdown")
 
-# التعامل مع الضغط على الأزرار
 @bot.callback_query_handler(func=lambda call: call.data.startswith("analyze_"))
 def callback_query(call):
     pair_input = call.data.replace("analyze_", "")
     if pair_input in POCKET_OPTION_PAIRS:
         symbol_code = POCKET_OPTION_PAIRS[pair_input]
-        bot.answer_callback_query(call.id, text=f"جاري تحليل {pair_input}...")
+        bot.answer_callback_query(call.id, text=f"جاري فحص حركة {pair_input}...")
         
-        msg = bot.send_message(call.message.chat.id, f"⏳ جاري فحص المؤشرات الفنية لزوج **{pair_input}**...", parse_mode="Markdown")
+        msg = bot.send_message(call.message.chat.id, f"⚡ جاري تحليل الزخم السريع لزوج **{pair_input}**...", parse_mode="Markdown")
         
         analysis_result = analyze_market(symbol_code, pair_input)
         
@@ -160,5 +151,5 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.start()
     
-    print("Bot and Web Server are running...")
+    print("Fast Bot and Web Server are running...")
     bot.infinity_polling()
