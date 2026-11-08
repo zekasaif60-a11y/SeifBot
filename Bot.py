@@ -1,162 +1,150 @@
-import json
-import time
-import re
-import websocket
-import threading
-import requests
+import telebot
+import pandas as pd
+import numpy as np
+import yfinance as yf
+from datetime import datetime
 
-# ==================== إعدادات الحساب والربط ====================
+# تهيئة بوت التليجرام (ضع توكن البوت الخاص بك هنا)
+TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+bot = telebot.TeleBot(TOKEN)
 
-# 1. رمز المصادقة لمنصة Pocket Option (تأكد من تجديده من المتصفح إذا انتهت الجلسة)
-POCKET_OPTION_SSID = '42["auth",{"session":"YOUR_POCKET_OPTION_SESSION_TOKEN","isDemo":1,"uid":1234567,"platform":1}]'
-
-# 2. بيانات بوت التليجرام الخاص بك (جلب الـ Token من BotFather)
-TELEGRAM_BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN_HERE'
-
-# إعدادات حجم ونوع الصفقات الافتراضية
-TRADE_AMOUNT = 10     # مبلغ الصفقة بالدولار
-TRADE_DURATION = 60   # مدة الصفقة بالثواني (دقيقة واحدة)
-IS_DEMO = 1           # 1 للحساب التجريبي و 0 للحساب الحقيقي
-
-# متغير عالمي للاحتفاظ باتصال الـ WebSocket الخاص بالمنصة
-pocket_ws = None
-
-# ==================== قائمة أزواج منصه Pocket Option المبرمجة ====================
-POCKET_OPTION_ASSETS = {
-    # أزواج العملات الاصطناعية الأكثر ربحية (OTC)
-    "EURUSD": "EURUSD_OTC",
-    "GBPUSD": "GBPUSD_OTC",
-    "USDJPY": "USDJPY_OTC",
-    "AUDCAD": "AUDCAD_OTC",
-    "USDCAD": "USDCAD_OTC",
-    "EURGBP": "EURGBP_OTC",
-    "EURJPY": "EURJPY_OTC",
-    "NZDUSD": "NZDUSD_OTC",
-    "AUDUSD": "AUDUSD_OTC",
-    "GBPJPY": "GBPJPY_OTC",
-    
-    # أزواج العملات في السوق الحقيقي المباشر (Real Market)
-    "EURUSD_REAL": "EURUSD",
-    "GBPUSD_REAL": "GBPUSD",
-    "USDJPY_REAL": "USDJPY",
-    "AUDUSD_REAL": "AUDUSD",
-    
-    # العملات الرقمية وسوق السلع والأسهم (Crypto & Commodities)
-    "BTCUSDT": "BTCUSDT_OTC",
-    "ETHUSDT": "ETHUSDT_OTC",
-    "GOLD": "XAUUSD_OTC",      # الذهب عبر الـ OTC
-    "SILVER": "XAGUSD_OTC",    # الفضة عبر الـ OTC
+# قائمة أزواج العملات المتاحة في منصة بوكت آوبشن (الرئيسية والـ OTC)
+POCKET_OPTION_PAIRS = {
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "USDJPY=X",
+    "AUD/USD": "AUDUSD=X",
+    "USD/CAD": "USDCAD=X",
+    "NZD/USD": "NZDUSD=X",
+    "EUR/GBP": "EURGBP=X",
+    "EUR/JPY": "EURJPY=X",
+    "GBP/JPY": "GBPJPY=X",
+    "AUD/JPY": "AUDJPY=X",
+    "EUR/AUD": "EURAUD=X",
+    "USD/CHF": "USDCHF=X",
 }
 
-# ==================== دالة معالجة وتنفيذ الصفقات ====================
-
-def place_order(asset, action):
-    global pocket_ws
-    if pocket_ws and pocket_ws.sock and pocket_ws.sock.connected:
-        trade_request = [
-            "openOrder",
-            {
-                "asset": asset,
-                "amount": TRADE_AMOUNT,
-                "action": action.lower(),  # "call" للشراء أو "put" للبيع
-                "time": TRADE_DURATION,
-                "isDemo": IS_DEMO
-            }
-        ]
-        # إرسال الأمر الفوري عبر الـ WebSocket
-        pocket_ws.send('42' + json.dumps(trade_request))
-        print(f"🚀 [POCKET OPTION] تم تنفيذ صفقة {action.upper()} على {asset} بنجاح بقيمة ${TRADE_AMOUNT}")
-    else:
-        print("⚠️ [POCKET OPTION] الاتصال بالمنصة مقطوع! لا يمكن تنفيذ الصفقة.")
-
-# ==================== دالة قراءة وتفسير رسائل التليجرام ====================
-
-def parse_telegram_message(text):
-    text_upper = text.upper().replace("/", "").replace(" ", "").replace("-", "")
+def calculate_indicators(df):
+    # حساب Bollinger Bands (20, 2)
+    df['SMA20'] = df['Close'].rolling(window=20).mean()
+    df['STD'] = df['Close'].rolling(window=20).std()
+    df['BB_Upper'] = df['SMA20'] + (df['STD'] * 2)
+    df['BB_Lower'] = df['SMA20'] - (df['STD'] * 2)
     
-    matched_asset = None
-    action = None
+    # حساب RSI (14)
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
     
-    # 1. البحث عن الزوج داخل نص الرسالة ومطابقته بالقائمة المبرمجة لدينا
-    for short_name, full_name in POCKET_OPTION_ASSETS.items():
-        if short_name in text_upper:
-            # التحقق إذا كانت الرسالة تطلب السوق الحقيقي عمداً أو الافتراضي OTC
-            if "REAL" in text_upper and f"{short_name}_REAL" in POCKET_OPTION_ASSETS:
-                matched_asset = POCKET_OPTION_ASSETS[f"{short_name}_REAL"]
-            else:
-                matched_asset = full_name
-            break
-            
-    # إذا لم نجد أياً من الأزواج المحددة، نقوم بمحاولة استخراج ديناميكية عامة
-    if not matched_asset:
-        dynamic_match = re.search(r'([A-Z]{6})', text_upper)
-        if dynamic_match:
-            base_asset = dynamic_match.group(0)
-            matched_asset = f"{base_asset}_OTC" # تحويل تلقائي لصيغة OTC
-        else:
-            return None, None
+    # حساب Stochastic Oscillator (%K و %D)
+    low_14 = df['Low'].rolling(window=14).min()
+    high_14 = df['High'].rolling(window=14).max()
+    df['Stoch_K'] = 100 * ((df['Close'] - low_14) / (high_14 - low_14))
+    df['Stoch_D'] = df['Stoch_K'].rolling(window=3).mean()
+    
+    return df
 
-    # 2. تحديد الاتجاه (شراء CALL أم بيع PUT)
-    if any(word in text_upper for word in ["BUY", "CALL", "UP", "📈", "HIGHER"]):
-        action = "call"
-    elif any(word in text_upper for word in ["SELL", "PUT", "DOWN", "📉", "LOWER"]):
-        action = "put"
+def analyze_market(pair_symbol):
+    try:
+        ticker = yf.Ticker(pair_symbol)
+        df = ticker.history(period="1d", interval="1m")
+        if df.empty or len(df) < 30:
+            return "❌ بيانات السوق غير كافية حالياً لهذا الزوج."
         
-    return matched_asset, action
-
-def check_telegram_updates():
-    last_update_id = 0
-    url = f"https://telegram.org{TELEGRAM_BOT_TOKEN}/getUpdates"
-    
-    print("📡 [TELEGRAM] جاري الاستماع لقنوات البوت وقراءة إشارات التداول الحية...")
-    
-    while True:
-        try:
-            response = requests.get(url, params={"offset": last_update_id + 1, "timeout": 30}, timeout=35)
-            data = response.json()
+        df = calculate_indicators(df)
+        
+        last_row = df.iloc[-1]
+        close = last_row['Close']
+        sma20 = last_row['SMA20']
+        upper = last_row['BB_Upper']
+        lower = last_row['BB_Lower']
+        rsi = last_row['RSI']
+        stoch_k = last_row['Stoch_K']
+        stoch_d = last_row['Stoch_D']
+        
+        reasons = []
+        decision = "انتظار (لا تقم بالدخول)"
+        
+        # استراتيجية ملامسة الأطراف (Bollinger Bands Edges) -> تجنب الدخول
+        if close >= upper:
+            reasons.append("السعر يلامس أو يخترق الحد العلوي للـ Bollinger Bands (منطقة تشبع شرائي).")
+            decision = "تجنب الدخول (السوق غير مناسب للاستمرار مع الاتجاه الحالي)."
+        elif close <= lower:
+            reasons.append("السعر يلامس أو يخترق الحد السفلي للـ Bollinger Bands (منطقة تشبع بيعي).")
+            decision = "تجنب الدخول (السوق غير مناسب للاستمرار مع الاتجاه الحالي)."
+        
+        # استراتيجية الارتداد من الخط الأوسط (Middle Line Rebound) مع تقاطع المؤشرات
+        elif abs(close - sma20) < (upper - lower) * 0.15:
+            if rsi > 50 and stoch_k > stoch_d:
+                trade_type = "شراء (CALL)"
+                duration = "دقيقتان إلى 3 دقائق"
+                decision = f"نوع الصفقة: {trade_type} | المدة: {duration}"
+                reasons.append("ارتداد واضح للسعر من خط المنتصف (SMA20) مع اتجاه صاعد.")
+                reasons.append(f"مؤشر RSI عند {rsi:.2f} فوق مستوى 50.")
+                reasons.append(f"تقاطع إيجابي في Stochastic (%K: {stoch_k:.2f} فوق %D: {stoch_d:.2f}).")
+            elif rsi < 50 and stoch_k < stoch_d:
+                trade_type = "بيع (PUT)"
+                duration = "دقيقتان إلى 3 دقائق"
+                decision = f"نوع الصفقة: {trade_type} | المدة: {duration}"
+                reasons.append("ارتداد واضح للسعر من خط المنتصف (SMA20) مع اتجاه هابط.")
+                reasons.append(f"مؤشر RSI عند {rsi:.2f} تحت مستوى 50.")
+                reasons.append(f"تقاطع سلبي في Stochastic (%K: {stoch_k:.2f} تحت %D: {stoch_d:.2f}).")
+            else:
+                reasons.append("السعر قرب الخط الأوسط لكن مؤشرات RSI و Stochastic غير متوافقة.")
+                decision = "انتظار (السوق غير مستقر)."
+        else:
+            reasons.append("السعر في منتصف القناة ولا يوجد إشارة واضحة للارتداد أو الاختراق.")
+            decision = "انتظار (فرصة غير مؤكدة)."
             
-            if "result" in data:
-                for update in data["result"]:
-                    last_update_id = update["update_id"]
-                    
-                    if "message" in update and "text" in update["message"]:
-                        msg_text = update["message"]["text"]
-                        print(f"📥 [TELEGRAM] رسالة جديدة: {msg_text}")
-                        
-                        asset, action = parse_telegram_message(msg_text)
-                        
-                        if asset and action:
-                            print(f"🎯 [ANALYSIS] تم رصد إشارة متوافقة: {asset} -> {action.upper()}")
-                            place_order(asset, action)
-                        else:
-                            print("ℹ️ [ANALYSIS] الرسالة لا تطابق شروط صفقة صالحة لمنصة Pocket Option.")
-                            
-        except Exception as e:
-            print(f"⚠️ [TELEGRAM] خطأ في جلب البيانات: {e}")
-        time.sleep(1)
+        report = f"📊 **تحليل الزوج: {pair_symbol}**\n"
+        report += f"🔹 **القرار:** {decision}\n"
+        report += f"💰 **السعر الحالي:** {close:.5f}\n\n"
+        report += "🔍 **الأسباب الفنية:**\n"
+        for r in reasons:
+            report += f"• {r}\n"
+            
+        return report
+    except Exception as e:
+        return f"❌ حدث خطأ أثناء تحليل الزوج: {str(e)}"
 
-# ==================== إدارة اتصال الـ WebSocket للمنصة ====================
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    welcome_text = (
+        "اهلاً بك في بوت تحليل منصة بوكت آوبشن (Pocket Option) الاحترافي! 🚀\n\n"
+        "الأوامر المتاحة:\n"
+        "/pairs - لعرض جميع أزواج العملات المدعومة\n"
+        "/analyze [الرمز] - لتحليل زوج معين (مثال: /analyze EUR/USD)\n"
+    )
+    bot.reply_to(message, welcome_text)
 
-def on_open(ws):
-    print("🔌 [POCKET OPTION] تم الاتصال بنجاح. جاري إرسال المصادقة...")
-    ws.send(POCKET_OPTION_SSID)
+@bot.message_handler(commands=['pairs'])
+def send_pairs(message):
+    pairs_text = "📋 **قائمة أزواج العملات المدعومة في البوت:**\n\n"
+    for k in POCKET_OPTION_PAIRS.keys():
+        pairs_text += f"• `{k}`\n"
+    pairs_text += "\nاستخدم الأمر `/analyze [الزوج]` للحصول على التحليل الفوري."
+    bot.reply_to(message, pairs_text)
 
-def on_close(ws, close_status_code, close_msg):
-    print("❌ [POCKET OPTION] تم قطع الاتصال. إعادة المحاولة بعد 5 ثوانٍ...")
-    time.sleep(5)
-    connect_pocket_option()
-
-def connect_pocket_option():
-    global pocket_ws
-    ws_url = "wss://://pocketoption.com"
-    pocket_ws = websocket.WebSocketApp(ws_url, on_open=on_open, on_close=on_close)
-    ws_thread = threading.Thread(target=pocket_ws.run_forever)
-    ws_thread.daemon = True
-    ws_thread.start()
-
-# ==================== تشغيل النظام بالكامل ====================
+@bot.message_handler(commands=['analyze'])
+def handle_analyze(message):
+    text = message.text.split()
+    if len(text) < 2:
+        bot.reply_to(message, "⚠️ يرجى تحديد الزوج بعد الأمر. مثال: `/analyze EUR/USD`", parse_mode="Markdown")
+        return
+    
+    pair_input = text[1].upper()
+    if pair_input not in POCKET_OPTION_PAIRS:
+        bot.reply_to(message, "❌ هذا الزوج غير مدعوم. استخدم الأمر `/pairs` لعرض الأزواج المتاحة.", parse_mode="Markdown")
+        return
+    
+    symbol_code = POCKET_OPTION_PAIRS[pair_input]
+    bot.reply_to(message, f"⏳ جاري تحليل زوج {pair_input} باستخدام المؤشرات الفنية والاستراتيجيات المتقدمة...")
+    
+    analysis_result = analyze_market(symbol_code)
+    bot.reply_to(message, analysis_result, parse_mode="Markdown")
 
 if __name__ == "__main__":
-    connect_pocket_option()
-    time.sleep(3)
-    check_telegram_updates()
+    print("Bot is running...")
+    bot.polling()
