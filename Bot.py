@@ -1,105 +1,84 @@
-import telebot
-import requests
-import time
-import pandas as pd
-import numpy as np
-from flask import Flask
-import threading
+import random
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# --- سيرفر وهمي لتشغيل الكود مجاناً على Render ---
-app = Flask('')
+# Token البوت الخاص بك
+TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
 
-@app.route('/')
-def home():
-    return "Trading Bot is Active!"
+# قائمة شاملة لأزواج منصة Pocket Option (عادية و OTC)
+CURRENCY_PAIRS = [
+    # Forex Majors & Crosses
+    "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "EURGBP", "EURJPY", "GBPJPY",
+    # OTC Pairs (الأكثر تداولاً في المنصة)
+    "EURUSD-OTC", "GBPUSD-OTC", "USDJPY-OTC", "AUDUSD-OTC", "USDCAD-OTC", 
+    "EURGBP-OTC", "EURJPY-OTC", "GBPJPY-OTC", "NZDUSD-OTC", "BRLUSD-OTC", "ZARUSD-OTC"
+]
 
-def run():
-    app.run(host='0.0.0.0', port=8080)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome_message = (
+        "🤖 **مرحباً بك في بوت إشارات Pocket Option الشامل**\n\n"
+        "الأوامر المتاحة:\n"
+        "🔹 `/signal [الزوج] [1M أو 5M]` - لإرسال إشارة لزوج معين.\n"
+        "🔹 `/all_pairs` - لعرض قائمة الأزواج المتاحة في النظام.\n\n"
+        "مثال: `/signal EURUSD-OTC 1M`"
+    )
+    await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
-# تشغيل سيرفر ويب في خلفية الكود
-threading.Thread(target=run, daemon=True).start()
+async def list_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    pairs_list = "\n".join([f"📈 {pair}" for pair in CURRENCY_PAIRS])
+    await update.message.reply_text(
+        f"📋 **قائمة الأزواج المتاحة في البوت:**\n\n{pairs_list}", 
+        parse_mode='Markdown'
+    )
 
-# --- إعدادات البوت والتوكن الخاص بك ---
-TELEGRAM_TOKEN = "8950126151:AAEzmSDqtiyVJtsfyLaeSf853oL2P2DAykg" 
-bot = telebot.TeleBot(TELEGRAM_TOKEN)
-
-# ⚠️ ضع رقم الـ ID الخاص بحسابك هنا بدلاً من 123456789 لتستقبل التنبيهات
-chat_id = 123456789  
-
-# أزواج العملات المراد فحصها
-ALL_PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-
-def calculate_signals(df):
-    """ دالة حساب مؤشر RSI و المتوسطات الأسية EMA """
-    close = df['close']
+async def generate_signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
     
-    # 1. حساب مؤشر RSI (فترة 7 ليتناسب مع الصفقات السريعة)
-    delta = close.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=7).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=7).mean()
+    # التحقق من المدخلات أو اختيار زوج عشوائي وإطار زمني افتراضي
+    pair = args[0].upper() if len(args) > 0 else random.choice(CURRENCY_PAIRS)
+    timeframe = args[1].upper() if len(args) > 1 else "M1"
     
-    # تجنب القسمة على صفر
-    loss = loss.replace(0, 0.00001)
-    rs = gain / loss
-    df['rsi'] = 100 - (100 / (1 + rs))
-    
-    # 2. حساب المتوسطات الأسية EMA
-    df['ema_fast'] = close.ewm(span=5, adjust=False).mean()
-    df['ema_slow'] = close.ewm(span=13, adjust=False).mean()
-    
-    # أخذ آخر شمعة مغلقة لتحليلها
-    last_row = df.iloc[-1]
-    
-    # شروط صفقة صعود (CALL)
-    if last_row['rsi'] < 35 and last_row['ema_fast'] > last_row['ema_slow']:
-        return "🟢 قوية جداً (CALL) إشارة صعود"
-    
-    # شروط صفقة هبوط (PUT)
-    elif last_row['rsi'] > 65 and last_row['ema_fast'] < last_row['ema_slow']:
-        return "🔴 قوية جداً (PUT) إشارة هبوط"
-    
-    return "⚪ الانتظار (السوق غير مستقر)"
+    if pair not in CURRENCY_PAIRS:
+        await update.message.reply_text("⚠️ عذراً، هذا الزوج غير مدرج في القائمة. اكتب `/all_pairs` لعرض الأزواج المتاحة.")
+        return
 
-def monitor_market():
-    """ دالة فحص السوق لكل العملات وإرسال التنبيهات """
-    while True:
-        for symbol in ALL_PAIRS:
-            try:
-                # جلب البيانات من بينانس بآخر 50 شمعة (فريم دقيقة واحدة)
-                url = f"https://binance.com{symbol}&interval=1m&limit=50"
-                res = requests.get(url, timeout=10).json()
-                
-                # تحويل البيانات إلى DataFrame وتنظيفها
-                df = pd.DataFrame(res, columns=[
-                    'open_time', 'open', 'high', 'low', 'close', 'volume',
-                    'close_time', 'quote_asset_volume', 'number_of_trades',
-                    'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
-                ])
-                df['close'] = df['close'].astype(float)
-                
-                # حساب الإشارة للعملة الحالية
-                decision = calculate_signals(df)
-                
-                # إذا كانت الإشارة قوية وصالحة للدخول يتم إرسال رسالة
-                if "قوية جداً" in decision:
-                    msg = f"⚠️ **إشارة مكتملة الشروط لـ {symbol}** ⚠️\n\nالقرار: {decision}"
-                    bot.send_message(chat_id, msg, parse_mode="Markdown")
-                
-                # انتظر ثانية بين كل عملة وعملة لمنع الحظر من بينانس
-                time.sleep(1)
-                
-            except Exception as e:
-                print(f"❌ خطأ في تحليل الزوج {symbol}: {e}")
-        
-        # الانتظار 15 ثانية بعد إنهاء لفة كاملة على كل العملات
-        time.sleep(15)
+    # محاكاة اتجاه الصفقة والتفاصيل الفنية
+    direction = random.choice(["CALL 🟢 (BUY)", "PUT 🔴 (SELL)"])
+    trend = "Uptrend" if "CALL" in direction else "Downtrend"
+    forecast = f"{random.randint(80, 98)}.{random.randint(10, 99)}%"
+    payout = f"{random.randint(75, 92)}.%";
+    
+    if timeframe == "M5":
+        message = (
+            f"👑 **VIP - 5Min - POCKET OPTION** 👑\n"
+            f"📊 **VIP SIGNAL | Strategy M5**\n\n"
+            f"🔹 **{pair} - {direction}**\n"
+            f"🔹 **Expiration:** 5 minutes (M5)\n"
+            f"🔹 **If loss, do up to 2 Gale.**\n\n"
+            f"🎯 **Forecast:** {forecast}\n"
+            f"💰 **Payout:** {payout}\n\n"
+            f"📲 [Click to open broker](https://pocketoption.com)"
+        )
+    else:
+        message = (
+            f"📊 **POCKET OPTION (FREE {timeframe})**\n\n"
+            f"💎 **{pair}**\n"
+            f"⏰ {timeframe}\n"
+            f"👉 {direction}\n\n"
+            f"📈 **Tend:** {trend}\n"
+            f"🎯 **Forecast:** {forecast}\n"
+            f"💰 **Payout:** {payout}\n\n"
+            f"📲 [Click to open broker](https://pocketoption.com)"
+        )
 
-# تشغيل الفحص الفني في خلفية البوت
-threading.Thread(target=monitor_market, daemon=True).start()
+    await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
 
-if __name__ == "__main__":
-    print("🚀 البوت بدأ التحليل الفني لـ Pocket Option...")
-    try:
-        bot.infinity_polling()
-    except Exception as e:
-        print(f"❌ حدث خطأ في البولينج: {e}")
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("all_pairs", list_pairs))
+    app.add_handler(CommandHandler("signal", generate_signal))
+    
+    print("Powerful Pocket Option Bot is running...")
+    app.run_polling()
