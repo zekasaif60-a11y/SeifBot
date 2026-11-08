@@ -20,11 +20,10 @@ def run():
 threading.Thread(target=run, daemon=True).start()
 
 # --- إعدادات البوت والتوكن الخاص بك ---
-# ⚠️ ضع التوكن الجديد الصحيح هنا بدلاً من القديم
-TELEGRAM_TOKEN = "ضع_التوكن_الجديد_هنا_بدون_تعديل_الاقواس" 
+TELEGRAM_TOKEN = "8950126151:AAEzmSDqtiyVJtsfyLaeSf853oL2P2DAykg" 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# ضع رقم الـ ID الخاص بحسابك هنا لتستقبل التنبيهات
+# ⚠️ ضع رقم الـ ID الخاص بحسابك هنا بدلاً من 123456789 لتستقبل التنبيهات
 chat_id = 123456789  
 
 # أزواج العملات المراد فحصها
@@ -86,7 +85,7 @@ def monitor_market():
                     msg = f"⚠️ **إشارة مكتملة الشروط لـ {symbol}** ⚠️\n\nالقرار: {decision}"
                     bot.send_message(chat_id, msg, parse_mode="Markdown")
                 
-                # 🛑 تصليح ثغرة الـ Rate Limit: انتظر ثانية بين كل عملة وعملة لمنع الحظر
+                # انتظر ثانية بين كل عملة وعملة لمنع الحظر من بينانس
                 time.sleep(1)
                 
             except Exception as e:
