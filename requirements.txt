@@ -1,5 +1,4 @@
-pyTelegramBotAPI
+python-telegram-bot==20.8
+websockets
 pandas
 numpy
-yfinance
-flask
