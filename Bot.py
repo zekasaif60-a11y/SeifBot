@@ -2,6 +2,7 @@ import os
 from flask import Flask
 import threading
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -17,7 +18,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# تهيئة بوت التليجرام بالتوكن الجديد
+# تهيئة بوت التليجرام بالتوكن الخاص بك
 TOKEN = "8950126151:AAHQNS8au0YZjLCznMi2OBsLl7ZIjDNsHRA"
 bot = telebot.TeleBot(TOKEN)
 
@@ -75,38 +76,35 @@ def analyze_market(pair_symbol):
         stoch_d = last_row['Stoch_D']
         
         reasons = []
-        decision = "انتظار (لا تقم بالدخول)"
+        trade_decision = ""
         
         if close >= upper:
-            reasons.append("السعر يلامس أو يخترق الحد العلوي للـ Bollinger Bands (منطقة تشبع شرائي).")
-            decision = "تجنب الدخول (السوق غير مناسب للاستمرار مع الاتجاه الحالي)."
+            trade_decision = "❌ تجنب الدخول (السوق غير مناسب - تشبع شرائي عند حواف Bollinger)"
+            reasons.append("السعر يلامس أو يخترق الحد العلوي للـ Bollinger Bands.")
         elif close <= lower:
-            reasons.append("السعر يلامس أو يخترق الحد السفلي للـ Bollinger Bands (منطقة تشبع بيعي).")
-            decision = "تجنب الدخول (السوق غير مناسب للاستمرار مع الاتجاه الحالي)."
+            trade_decision = "❌ تجنب الدخول (السوق غير مناسب - تشبع بيعي عند حواف Bollinger)"
+            reasons.append("السعر يلامس أو يخترق الحد السفلي للـ Bollinger Bands.")
         elif abs(close - sma20) < (upper - lower) * 0.15:
             if rsi > 50 and stoch_k > stoch_d:
-                trade_type = "شراء (CALL)"
-                duration = "دقيقتان إلى 3 دقائق"
-                decision = f"نوع الصفقة: {trade_type} | المدة: {duration}"
+                trade_decision = "🟢 نوع الصفقة: شراء (CALL) | ⏱️ المدة: دقيقة إلى 3 دقائق (حسب حركة الشمعة)"
                 reasons.append("ارتداد واضح للسعر من خط المنتصف (SMA20) مع اتجاه صاعد.")
                 reasons.append(f"مؤشر RSI عند {rsi:.2f} فوق مستوى 50.")
                 reasons.append(f"تقاطع إيجابي في Stochastic (%K: {stoch_k:.2f} فوق %D: {stoch_d:.2f}).")
             elif rsi < 50 and stoch_k < stoch_d:
-                trade_type = "بيع (PUT)"
-                duration = "دقيقتان إلى 3 دقائق"
-                decision = f"نوع الصفقة: {trade_type} | المدة: {duration}"
+                trade_decision = "🔴 نوع الصفقة: بيع (PUT) | ⏱️ المدة: دقيقة إلى 3 دقائق (حسب حركة الشمعة)"
                 reasons.append("ارتداد واضح للسعر من خط المنتصف (SMA20) مع اتجاه هابط.")
                 reasons.append(f"مؤشر RSI عند {rsi:.2f} تحت مستوى 50.")
                 reasons.append(f"تقاطع سلبي في Stochastic (%K: {stoch_k:.2f} تحت %D: {stoch_d:.2f}).")
             else:
-                reasons.append("السعر قرب الخط الأوسط لكن مؤشرات RSI و Stochastic غير متوافقة.")
-                decision = "انتظار (السوق غير مستقر)."
+                trade_decision = "⏳ انتظار (مؤشرات غير متوافقة مع المنتصف)"
+                reasons.append("السعر قرب الخط الأوسط لكن مؤشرات RSI و Stochastic لا تدعم الدخول.")
         else:
-            reasons.append("السعر في منتصف القناة ولا يوجد إشارة واضحة للارتداد أو الاختراق.")
-            decision = "انتظار (فرصة غير مؤكدة)."
+            trade_decision = "⏳ انتظار (السعر في منتصف القناة)"
+            reasons.append("لا يوجد ارتداد واضح أو إشارة مؤكدة من الخط الأوسط.")
             
-        report = f"📊 **تحليل الزوج: {pair_symbol}**\n"
-        report += f"🔹 **القرار:** {decision}\n"
+        # يبدأ الرد بنوع الصفقة والمدة أولاً تماماً كما طلبت
+        report = f"{trade_decision}\n\n"
+        report += f"📊 **الزوج:** {pair_symbol}\n"
         report += f"💰 **السعر الحالي:** {close:.5f}\n\n"
         report += "🔍 **الأسباب الفنية:**\n"
         for r in reasons:
@@ -116,44 +114,39 @@ def analyze_market(pair_symbol):
     except Exception as e:
         return f"❌ حدث خطأ أثناء تحليل الزوج: {str(e)}"
 
-@bot.message_handler(commands=['start'])
+# دالة لإنشاء أزواج العملات على شكل أزرار
+def get_pairs_keyboard():
+    markup = InlineKeyboardMarkup()
+    markup.row_width = 2
+    buttons = []
+    for pair_name in POCKET_OPTION_PAIRS.keys():
+        buttons.append(InlineKeyboardButton(pair_name, callback_data=f"analyze_{pair_name}"))
+    markup.add(*buttons)
+    return markup
+
+@bot.message_handler(commands=['start', 'pairs'])
 def send_welcome(message):
     welcome_text = (
-        "اهلاً بك يا زكريا في بوت تحليل منصة بوكت آوبشن (Pocket Option) الاحترافي! 🚀\n\n"
-        "الأوامر المتاحة:\n"
-        "/pairs - لعرض جميع أزواج العملات المدعومة\n"
-        "/analyze [الرمز] - لتحليل زوج معين (مثال: /analyze EUR/USD)\n"
+        "اهلاً بك يا زكريا في بوت تحليل منصة بوكت آوبشن الاحترافي! 🚀\n\n"
+        "اختر الزوج الذي تريد تحليله مباشرة بضغطة زر:"
     )
-    bot.reply_to(message, welcome_text)
+    bot.send_message(message.chat.id, welcome_text, reply_markup=get_pairs_keyboard(), parse_mode="Markdown")
 
-@bot.message_handler(commands=['pairs'])
-def send_pairs(message):
-    pairs_text = "📋 **قائمة أزواج العملات المدعومة في البوت:**\n\n"
-    for k in POCKET_OPTION_PAIRS.keys():
-        pairs_text += f"• `{k}`\n"
-    pairs_text += "\nاستخدم الأمر `/analyze [الزوج]` للحصول على التحليل الفوري."
-    bot.reply_to(message, pairs_text)
-
-@bot.message_handler(commands=['analyze'])
-def handle_analyze(message):
-    text = message.text.split()
-    if len(text) < 2:
-        bot.reply_to(message, "⚠️ يرجى تحديد الزوج بعد الأمر. مثال: `/analyze EUR/USD`", parse_mode="Markdown")
-        return
-    
-    pair_input = text[1].upper()
-    if pair_input not in POCKET_OPTION_PAIRS:
-        bot.reply_to(message, "❌ هذا الزوج غير مدعوم. استخدم الأمر `/pairs` لعرض الأزواج المتاحة.", parse_Mime="Markdown")
-        return
-    
-    symbol_code = POCKET_OPTION_PAIRS[pair_input]
-    bot.reply_to(message, f"⏳ جاري تحليل زوج {pair_input} باستخدام المؤشرات الفنية والاستراتيجيات المتقدمة...")
-    
-    analysis_result = analyze_market(symbol_code)
-    bot.reply_to(message, analysis_result, parse_mode="Markdown")
+# التعامل مع الضغط على الأزرار
+@bot.callback_query_handler(func=lambda call: call.data.startswith("analyze_"))
+def callback_query(call):
+    pair_input = call.data.replace("analyze_", "")
+    if pair_input in POCKET_OPTION_PAIRS:
+        symbol_code = POCKET_OPTION_PAIRS[pair_input]
+        bot.answer_callback_query(call.id, text=f"جاري تحليل {pair_input}...")
+        
+        msg = bot.send_message(call.message.chat.id, f"⏳ جاري فحص المؤشرات الفنية لزوج **{pair_input}**...", parse_mode="Markdown")
+        
+        analysis_result = analyze_market(symbol_code)
+        
+        bot.edit_message_text(analysis_result, chat_id=call.message.chat.id, message_id=msg.message_id, reply_markup=get_pairs_keyboard(), parse_mode="Markdown")
 
 if __name__ == "__main__":
-    # تشغيل سيرفر الويب في خلفية منفصلة
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.start()
     
