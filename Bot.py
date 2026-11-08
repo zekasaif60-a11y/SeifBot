@@ -1,14 +1,27 @@
+import os
+from flask import Flask
+import threading
 import telebot
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import datetime
+
+# تهيئة سيرفر الويب البسيط لإرضاء منصة Render وفتح الـ Port
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Pocket Option Bot is running actively!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 # تهيئة بوت التليجرام بالتوكن الجديد
 TOKEN = "8950126151:AAHQNS8au0YZjLCznMi2OBsLl7ZIjDNsHRA"
 bot = telebot.TeleBot(TOKEN)
 
-# قائمة أزواج العملات المتاحة في منصة بوكت آوبشن (الرئيسية والـ OTC المدعومة)
+# قائمة أزواج العملات المتاحة في منصة بوكت آوبشن
 POCKET_OPTION_PAIRS = {
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
@@ -25,20 +38,17 @@ POCKET_OPTION_PAIRS = {
 }
 
 def calculate_indicators(df):
-    # حساب Bollinger Bands (20, 2)
     df['SMA20'] = df['Close'].rolling(window=20).mean()
     df['STD'] = df['Close'].rolling(window=20).std()
     df['BB_Upper'] = df['SMA20'] + (df['STD'] * 2)
     df['BB_Lower'] = df['SMA20'] - (df['STD'] * 2)
     
-    # حساب RSI (14)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # حساب Stochastic Oscillator (%K و %D)
     low_14 = df['Low'].rolling(window=14).min()
     high_14 = df['High'].rolling(window=14).max()
     df['Stoch_K'] = 100 * ((df['Close'] - low_14) / (high_14 - low_14))
@@ -67,15 +77,12 @@ def analyze_market(pair_symbol):
         reasons = []
         decision = "انتظار (لا تقم بالدخول)"
         
-        # استراتيجية ملامسة الأطراف (Bollinger Bands Edges) -> تجنب الدخول
         if close >= upper:
             reasons.append("السعر يلامس أو يخترق الحد العلوي للـ Bollinger Bands (منطقة تشبع شرائي).")
             decision = "تجنب الدخول (السوق غير مناسب للاستمرار مع الاتجاه الحالي)."
         elif close <= lower:
             reasons.append("السعر يلامس أو يخترق الحد السفلي للـ Bollinger Bands (منطقة تشبع بيعي).")
             decision = "تجنب الدخول (السوق غير مناسب للاستمرار مع الاتجاه الحالي)."
-        
-        # استراتيجية الارتداد من الخط الأوسط (Middle Line Rebound) مع تقاطع المؤشرات
         elif abs(close - sma20) < (upper - lower) * 0.15:
             if rsi > 50 and stoch_k > stoch_d:
                 trade_type = "شراء (CALL)"
@@ -136,7 +143,7 @@ def handle_analyze(message):
     
     pair_input = text[1].upper()
     if pair_input not in POCKET_OPTION_PAIRS:
-        bot.reply_to(message, "❌ هذا الزوج غير مدعوم. استخدم الأمر `/pairs` لعرض الأزواج المتاحة.", parse_mode="Markdown")
+        bot.reply_to(message, "❌ هذا الزوج غير مدعوم. استخدم الأمر `/pairs` لعرض الأزواج المتاحة.", parse_Mime="Markdown")
         return
     
     symbol_code = POCKET_OPTION_PAIRS[pair_input]
@@ -146,5 +153,9 @@ def handle_analyze(message):
     bot.reply_to(message, analysis_result, parse_mode="Markdown")
 
 if __name__ == "__main__":
-    print("Bot is running with the new token...")
-    bot.polling()
+    # تشغيل سيرفر الويب في خلفية منفصلة
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+    
+    print("Bot and Web Server are running...")
+    bot.infinity_polling()
