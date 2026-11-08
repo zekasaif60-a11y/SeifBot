@@ -4,11 +4,11 @@ import numpy as np
 import yfinance as yf
 from datetime import datetime
 
-# تهيئة بوت التليجرام (ضع توكن البوت الخاص بك هنا)
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+# تهيئة بوت التليجرام بالتوكن الجديد
+TOKEN = "8950126151:AAHQNS8au0YZjLCznMi2OBsLl7ZIjDNsHRA"
 bot = telebot.TeleBot(TOKEN)
 
-# قائمة أزواج العملات المتاحة في منصة بوكت آوبشن (الرئيسية والـ OTC)
+# قائمة أزواج العملات المتاحة في منصة بوكت آوبشن (الرئيسية والـ OTC المدعومة)
 POCKET_OPTION_PAIRS = {
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
@@ -112,7 +112,7 @@ def analyze_market(pair_symbol):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     welcome_text = (
-        "اهلاً بك في بوت تحليل منصة بوكت آوبشن (Pocket Option) الاحترافي! 🚀\n\n"
+        "اهلاً بك يا زكريا في بوت تحليل منصة بوكت آوبشن (Pocket Option) الاحترافي! 🚀\n\n"
         "الأوامر المتاحة:\n"
         "/pairs - لعرض جميع أزواج العملات المدعومة\n"
         "/analyze [الرمز] - لتحليل زوج معين (مثال: /analyze EUR/USD)\n"
@@ -146,5 +146,5 @@ def handle_analyze(message):
     bot.reply_to(message, analysis_result, parse_mode="Markdown")
 
 if __name__ == "__main__":
-    print("Bot is running...")
+    print("Bot is running with the new token...")
     bot.polling()
