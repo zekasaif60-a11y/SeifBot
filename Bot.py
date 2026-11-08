@@ -6,7 +6,7 @@ import telebot
 import yfinance as yf
 from flask import Flask
 
-# ==================== إعدادات التليجرام (جاهزة بالبيانات) ====================
+# ==================== إعدادات التليجرام (مضبوطة كاملاً) ====================
 TOKEN = "8950126151:AAEzmSDqtiyVJtsfyLaeSf853oL2P2DAykg"
 CHAT_ID = "1706853546"
 
@@ -97,7 +97,7 @@ def trading_bot_loop():
         stoch_d = df["Stoch_D"].iloc[-1]
         pair_name = symbol.replace("=X", "")
 
-        # الشروط الصارمة للصققات السريعة (2-3 دقائق)
+        # الشروط الصارمة لصفقات (2-3 دقائق)
         if close <= lower and rsi < 30 and stoch_k > stoch_d:
           msg = (
               f"🟢 **فرصة صفقة صعود (شراء)**\n🔹 الزوج: `{pair_name}`\n📊 السعر:"
