@@ -1,142 +1,158 @@
-import os
-from flask import Flask
-import threading
-import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import asyncio
+import json
+import websockets
 import pandas as pd
 import numpy as np
-import yfinance as yf
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
-# تهيئة سيرفر الويب
-app = Flask(__name__)
+# ==================== [ ⚙️ إعدادات الحساب ] ====================
+SSID = "ضع_هنا_رمز_SSID_الخاص_بمتصفحك" 
+TELEGRAM_TOKEN = "8950126151:AAHQNS8au0YZjLCznMi2OBsLl7ZIjDNsHRA"
+MY_CHAT_ID = "ضع_هنا_الـ_Chat_ID_الخاص_بحسابك"  # مهم جداً لتلقي التقارير والأوامر
 
-@app.route('/')
-def home():
-    return "Pocket Option 1-Min Scalping Bot is running!"
+IS_DEMO = True         # True للحساب التجريبي | False للحساب الحقيقي
+TRADE_AMOUNT = 1.0     # قيمة الصفقة بالدولار
+TRADE_DURATION = 60    # مدة الصفقة (60 ثانية)
+# ===============================================================
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+ASSET_LIST = [
+    "EURUSD", "GBPUSD", "USDJPY", "EURUSD_otc", "GBPUSD_otc", "USDJPY_otc",
+    "AUDUSD_otc", "USDCAD_otc", "CRYPTO_BTCUSD_otc"
+]
 
-# تهيئة بوت التليجرام بالتوكن الخاص بك
-TOKEN = "8950126151:AAHQNS8au0YZjLCznMi2OBsLl7ZIjDNsHRA"
-bot = telebot.TeleBot(TOKEN)
+class PocketOptionTelegramBot:
+    def __init__(self):
+        self.uri = "wss://://pocketoption.com"
+        self.market_data = {asset: [] for asset in ASSET_LIST}
+        self.is_trading = False  # البوت يبدأ في وضع الانتظار حتى تعطه أمر تشغيل
+        self.application = None
 
-# قائمة جميع أزواج منصة بوكت آوبشن (العادية و OTC)
-POCKET_OPTION_PAIRS = {
-    "EUR/USD": "EURUSD=X",
-    "GBP/USD": "GBPUSD=X",
-    "USD/JPY": "USDJPY=X",
-    "AUD/USD": "AUDUSD=X",
-    "USD/CAD": "USDCAD=X",
-    "NZD/USD": "NZDUSD=X",
-    "EUR/GBP": "EURGBP=X",
-    "EUR/JPY": "EURJPY=X",
-    "GBP/JPY": "GBPJPY=X",
-    "AUD/JPY": "AUDJPY=X",
-    "EUR/AUD": "EURAUD=X",
-    "USD/CHF": "USDCHF=X",
-    "EUR/USD [OTC]": "EURUSD=X",
-    "GBP/USD [OTC]": "GBPUSD=X",
-    "USD/JPY [OTC]": "USDJPY=X",
-    "AUD/USD [OTC]": "AUDUSD=X",
-    "USD/CAD [OTC]": "USDCAD=X",
-    "EUR/JPY [OTC]": "EURJPY=X",
-    "GBP/JPY [OTC]": "GBPJPY=X",
-    "AUD/CAD [OTC]": "AUDCAD=X",
-    "CHF/JPY [OTC]": "CHFJPY=X",
-}
+    async def send_notification(self, text):
+        """إرسال إشعار للمستخدم"""
+        if self.application:
+            await self.application.bot.send_message(chat_id=MY_CHAT_ID, text=text)
 
-def analyze_fast_market(pair_symbol, display_name):
-    try:
-        ticker = yf.Ticker(pair_symbol)
-        df = ticker.history(period="5d", interval="1m")
-        if df.empty or len(df) < 15:
-            return f"❌ بيانات السوق غير كافية حالياً لهذا الزوج ({display_name})."
+    def calculate_rsi(self, prices, period=7):
+        deltas = np.diff(prices)
+        seed = deltas[:period+1]
+        up = seed[seed >= 0].sum() / period
+        down = -seed[seed < 0].sum() / period
+        rs = up / down if down != 0 else 0
+        return 100. - 100. / (1. + rs)
+
+    async def start_trade_loop(self):
+        """الاتصال ببوكت أوبشن وبدء التحليل اللحظي"""
+        try:
+            async with websockets.connect(self.uri) as ws:
+                # المصادقة
+                auth_payload = {"auth": SSID, "is_demo": IS_DEMO}
+                await ws.send(f"42[\"auth\", {json.dumps(auth_payload)}]")
+                
+                # الاشتراك في الأزواج
+                for asset in ASSET_LIST:
+                    await ws.send(f'42["subscribeSymbol", "{asset}"]')
+                
+                await self.send_notification("✅ متصل الآن بخوادم Pocket Option بنجاح وبانتظار الإشارات اللحظية...")
+
+                while True:
+                    response = await ws.recv()
+                    # التحقق من أن التحكم مفعل (لم يتم عمل /stop)
+                    if not self.is_trading:
+                        await asyncio.sleep(1)
+                        continue
+
+                    if response.startswith("42"):
+                        raw = json.loads(response[2:])
+                        if raw == "symbolData":
+                            data = raw
+                            asset = data.get("asset")
+                            price = float(data.get("price"))
+                            
+                            if asset in self.market_data:
+                                self.market_data[asset].append(price)
+                                if len(self.market_data[asset]) > 50:
+                                    self.market_data[asset].pop(0)
+                                
+                                if len(self.market_data[asset]) >= 15:
+                                    await self.analyze_market(ws, asset)
+        except Exception as e:
+            await self.send_notification(f"❌ حدث خطأ في الاتصال بالمنصة: {e}\nسيتم إعادة المحاولة بعد 10 ثوانٍ...")
+            await asyncio.sleep(10)
+            if self.is_trading:
+                asyncio.create_task(self.start_trade_loop())
+
+    async def analyze_market(self, ws, asset):
+        prices = self.market_data[asset]
+        current_price = prices[-1]
+        rsi = self.calculate_rsi(prices, period=7)
+        ema_fast = pd.Series(prices).ewm(span=5).mean().iloc[-1]
+
+        # استراتيجية سكالبر السريعة للـ OTC والعادي
+        if rsi <= 20 and current_price > ema_fast:
+            await self.execute_trade(ws, asset, "call")
+            self.market_data[asset] = []  # تصفير لمنع التكرار المتتالي
+
+        elif rsi >= 80 and current_price < ema_fast:
+            await self.execute_trade(ws, asset, "put")
+            self.market_data[asset] = []
+
+    async def execute_trade(self, ws, asset, direction):
+        order = {"asset": asset, "amount": TRADE_AMOUNT, "action": direction, "duration": TRADE_DURATION}
+        await ws.send(f"42[\"openOrder\", {json.dumps(order)}]")
         
-        # حساب المؤشرات مع معالجة أي قيم لعدم ظهور nan
-        low_5 = df['Low'].rolling(window=5, min_periods=1).min()
-        high_5 = df['High'].rolling(window=5, min_periods=1).max()
-        
-        denominator = (high_5 - low_5)
-        denominator = denominator.replace(0, 0.0001)
-        
-        df['Stoch_K'] = (100 * ((df['Close'] - low_5) / denominator)).fillna(50)
-        df['Stoch_D'] = df['Stoch_K'].rolling(window=2, min_periods=1).mean().fillna(50)
-        
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=7, min_periods=1).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=7, min_periods=1).mean()
-        rs = gain / (loss.replace(0, 0.0001))
-        df['RSI'] = (100 - (100 / (1 + rs))).fillna(50)
-        
-        last = df.iloc[-1]
-        close = last['Close']
-        stoch_k = float(last['Stoch_K'])
-        stoch_d = float(last['Stoch_D'])
-        rsi = float(last['RSI'])
-        
-        prev = df.iloc[-2]
-        is_candle_green = close > prev['Close']
-        
-        reasons = []
-        
-        # قرار صريح ومحدد بمدة دقيقة واحدة
-        if (stoch_k >= stoch_d) or (is_candle_green and rsi >= 45):
-            trade_decision = "🟢 شراء (CALL) | ⏱️ المدة: دقيقة واحدة"
-            reasons.append("زخم الشمعة السريعة يدعم الصعود.")
-            reasons.append(f"مؤشر Stochastic (%K: {stoch_k:.1f} / %D: {stoch_d:.1f}).")
-            reasons.append(f"مؤشر RSI عند {rsi:.1f}.")
+        mode = "تجريبي" if IS_DEMO else "حقيقي"
+        msg = f"🔥 [صفقة سريعة جديدة]\n📈 الاتجاه: {direction.upper()}\n📊 الزوج: {asset}\n💰 المبلغ: ${TRADE_AMOUNT}\n⏳ المدة: {TRADE_DURATION} ثانية\n🎮 وضع الحساب: {mode}"
+        await self.send_notification(msg)
+
+    # --- أوامر التحكم عبر تليجرام ---
+    async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if str(update.effective_chat.id) != str(MY_CHAT_ID):
+            return
+        if not self.is_trading:
+            self.is_trading = True
+            await update.message.reply_text("🚀 تم تفعيل البوت! بدأ الآن في مراقبة الأسواق وفتح الصفقات تلقائياً.")
+            asyncio.create_task(self.start_trade_loop())
         else:
-            trade_decision = "🔴 بيع (PUT) | ⏱️ المدة: دقيقة واحدة"
-            reasons.append("زخم الشمعة السريعة يدعم الهبوط.")
-            reasons.append(f"مؤشر Stochastic (%K: {stoch_k:.1f} / %D: {stoch_d:.1f}).")
-            reasons.append(f"مؤشر RSI عند {rsi:.1f}.")
+            await update.message.reply_text("⚠️ البوت يعمل بالفعل ويراقب السوق حالياً.")
 
-        report = f"{trade_decision}\n\n"
-        report += f"📊 **الزوج:** {display_name}\n"
-        report += f"💰 **السعر الحالي:** {close:.5f}\n\n"
-        report += "🔍 **أسباب الصفقة السريعة:**\n"
-        for r in reasons:
-            report += f"• {r}\n"
-            
-        return report
-    except Exception as e:
-        return f"❌ حدث خطأ أثناء التحليل: {str(e)}"
+    async def cmd_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if str(update.effective_chat.id) != str(MY_CHAT_ID):
+            return
+        self.is_trading = False
+        await update.message.reply_text("🛑 تم إيقاف التداول التلقائي مؤقتاً بنجاح.")
 
-# إنشاء أزرار الأزواج
-def get_pairs_keyboard():
-    markup = InlineKeyboardMarkup(row_width=2)
-    buttons = []
-    for pair_name in POCKET_OPTION_PAIRS.keys():
-        buttons.append(InlineKeyboardButton(pair_name, callback_data=f"fast_{pair_name}"))
-    markup.add(*buttons)
-    return markup
+    async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if str(update.effective_chat.id) != str(MY_CHAT_ID):
+            return
+        status = "🟢 يعمل ويتداول" if self.is_trading else "🔴 متوقف مؤقتاً"
+        mode = "تجريبي (Demo)" if IS_DEMO else "حقيقي (Live)"
+        msg = f"📊 [حالة البوت الحالية]\n🤖 الوضع: {status}\n🎮 نوع الحساب: {mode}\n💸 قيمة الصفقة: ${TRADE_AMOUNT}\n⏱️ مدة الصفقة: {TRADE_DURATION} ثانية\n📈 عدد الأزواج المراقبة: {len(ASSET_LIST)}"
+        await update.message.reply_text(msg)
 
-@bot.message_handler(commands=['start', 'pairs'])
-def send_welcome(message):
-    welcome_text = (
-        "⚡ **بوت صفقات السكالبينج (مدة دقيقة واحدة)**\n\n"
-        "اختر الزوج لتحصل على قرار (شراء/بيع) فوري بمدة دقيقة واحدة:"
-    )
-    bot.send_message(message.chat.id, welcome_text, reply_markup=get_pairs_keyboard(), parse_mode="Markdown")
+async def main():
+    bot_core = PocketOptionTelegramBot()
+    
+    # بناء تطبيق تليجرام باستخدام التوكن الخاص بك
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    bot_core.application = app
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("fast_"))
-def callback_query(call):
-    pair_input = call.data.replace("fast_", "")
-    if pair_input in POCKET_OPTION_PAIRS:
-        symbol_code = POCKET_OPTION_PAIRS[pair_input]
-        bot.answer_callback_query(call.id, text=f"جاري جلب صفقة دقيقة لـ {pair_input}...")
-        
-        msg = bot.send_message(call.message.chat.id, f"⚡ جاري تحليل الزخم لزوج **{pair_input}**...", parse_mode="Markdown")
-        
-        analysis_result = analyze_fast_market(symbol_code, pair_input)
-        
-        bot.edit_message_text(analysis_result, chat_id=call.message.chat.id, message_id=msg.message_id, reply_markup=get_pairs_keyboard(), parse_mode="Markdown")
+    # ربط الأوامر بالدوال البرمجية
+    app.add_handler(CommandHandler("start", bot_core.cmd_start))
+    app.add_handler(CommandHandler("stop", bot_core.cmd_stop))
+    app.add_handler(CommandHandler("status", bot_core.cmd_status))
+
+    print("[*] تم تشغيل نظام التحكم عبر تليجرام بنجاح...")
+    await bot_core.send_notification("🤖 البوت متصل الآن بتليجرام وفي وضع الاستعداد.\nأرسل /start لبدء التداول الآلي.")
+    
+    # تشغيل البوت ليستقبل رسائل تليجرام باستمرار
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    
+    # إبقاء البوت يعمل دون توقف
+    while True:
+        await asyncio.sleep(1)
 
 if __name__ == "__main__":
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.start()
-    
-    print("1-Min Scalping Bot is running...")
-    bot.infinity_polling()
+    asyncio.run(main())
