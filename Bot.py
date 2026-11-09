@@ -7,7 +7,7 @@ import yfinance as yf
 from flask import Flask
 
 # ================= عدادات التليجرام =================
-TOKEN = "8950126151:AAEZfC809SvYPQFhMnZ4gW64_sJj2uaRQyA"
+TOKEN = "8950126151:AAF3IAfDGPzqcxD9B8ccXWW8TjONPg9zO_s"
 CHAT_ID = "1706853546"
 
 bot = telebot.TeleBot(TOKEN)
