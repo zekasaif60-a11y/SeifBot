@@ -18,9 +18,10 @@ def home():
     return "SeifBot is Active and Running 24/7"
 
 def run_web():
-    app.run(host="0.0.0.0", port=8080)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 
-# ================= أزواج السوق (28 زوجاً) =================
+# ================= أزواج السوق (24 زوجاً) =================
 ALL_FOREX_PAIRS = [
     "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X",
     "USDCAD=X", "USDCHF=X", "NZDUSD=X", "EURGBP=X",
@@ -35,7 +36,7 @@ def trading_bot_loop():
     while True:
         try:
             for symbol in ALL_FOREX_PAIRS:
-                # جلب بيانات الدقيقة لتناسب الصفقات السريعة (2-3 دقائق)
+                # جلب بيانات الدقيقة لتناسب الصفقات السريعة
                 df = yf.download(symbol, period="1d", interval="1m", progress=False)
                 if df.empty or len(df) < 30:
                     continue
@@ -70,7 +71,7 @@ def trading_bot_loop():
                 stoch_d = df["Stoch_D"].iloc[-1]
                 pair_name = symbol.replace("=X", "")
 
-                # الشروط للصفقات (2-3 دقائق)
+                # شروط الصفقات
                 if close <= lower and rsi < 30 and stoch_k < 20:
                     msg = (
                         f"🟢 **صفقة صعود (شراء)**\n"
@@ -89,9 +90,9 @@ def trading_bot_loop():
                     )
                     bot.send_message(CHAT_ID, msg)
 
-                time.sleep(2)  # فاصل قصير بين كل زوج وزوج
+                time.sleep(2)
 
-            time.sleep(60)  # الفحص كل دقيقة
+            time.sleep(60)
         except Exception as e:
             print(f"خطأ: {e}")
             time.sleep(30)
