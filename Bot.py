@@ -1,103 +1,117 @@
-import os
-import threading
-import time
-import pandas as pd
 import telebot
 import yfinance as yf
-from flask import Flask
+import pandas_ta as ta
 
-# ================= عدادات التليجرام =================
-TOKEN = "8950126151:AAF3IAfDGPzqcxD9B8ccXWW8TjONPg9zO_s"
-CHAT_ID = "1706853546"
+# 1. ضع التوكن الخاص ببوتك هنا
+BOT_TOKEN = '8950126151:AAF3IAfDGPzqcxD9B8ccXWW8TjONPg9zO_s'
+bot = telebot.TeleBot(BOT_TOKEN)
 
-bot = telebot.TeleBot(TOKEN)
-app = Flask("")
+# قائمة شاملة لجميع أزواج العملات والمعادن المتوفرة في Pocket Option
+PO_MARKETS = {
+    # العملات الأساسية (Majors)
+    "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "AUD/USD": "AUDUSD=X", 
+    "NZD/USD": "NZDUSD=X", "USD/JPY": "JPY=X", "USD/CAD": "CAD=X", "USD/CHF": "CHF=X",
+    
+    # العملات المتقاطعة (Crosses)
+    "EUR/GBP": "EURGBP=X", "EUR/JPY": "EURJPY=X", "EUR/AUD": "EURAUD=X", 
+    "EUR/CAD": "EURCAD=X", "EUR/CHF": "EURCHF=X", "EUR/NZD": "EURNZD=X",
+    "GBP/JPY": "GBPJPY=X", "GBP/AUD": "GBPAUD=X", "GBP/CAD": "GBPCAD=X", 
+    "GBP/CHF": "GBPCHF=X", "AUD/JPY": "AUDJPY=X", "AUD/CAD": "AUDCAD=X", 
+    "AUD/NZD": "AUDNZD=X", "CAD/JPY": "CADJPY=X", "CHF/JPY": "CHFJPY=X", 
+    "NZD/JPY": "NZDJPY=X", "GBP/NZD": "GBPNZD=X",
+    
+    # العملات النامية (Exotics)
+    "USD/TRY": "TRY=X", "USD/ZAR": "ZAR=X", "USD/BRL": "BRL=X", "USD/MXN": "MXN=X",
+    
+    # المعادن والسلع (Commodities)
+    "الذهب (XAU/USD)": "GC=F",
+    "الفضة (XAG/USD)": "SI=F",
+    "النفط (UKBrent)": "BZ=F",
+    "النفط الأمريكي (USCrude)": "CL=F"
+}
 
-@app.route("/")
-def home():
-    return "SeifBot is Active and Running 24/7"
+# دالة التحليل الفني لـ Pocket Option
+def generate_po_signal(ticker_symbol):
+    try:
+        # سحب بيانات 5 دقائق لآخر يومين (الفريم المفضل لصفقات الخيارات الثنائية)
+        ticker = yf.Ticker(ticker_symbol)
+        df = ticker.history(period="2d", interval="5m")
+        
+        if df.empty or len(df) < 20:
+            return "⚠️ عذراً، هذا الزوج غير متاح للتحليل الفني المباشر حالياً (قد يكون في وضع OTC الحصري للشركة)."
 
-def run_web():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+        # إضافة المؤشرات الفنية (RSI و Bollinger Bands و MACD)
+        df.ta.rsi(length=14, append=True)
+        df.ta.bbands(length=20, std=2, append=True)
+        df.ta.macd(fast=12, slow=26, signal=9, append=True)
+        
+        last_row = df.iloc[-1]
+        close_price = last_row['Close']
+        rsi = last_row['RSI_14']
+        bb_lower = last_row['BBL_20_2.0']
+        bb_upper = last_row['BBU_20_2.0']
+        
+        # استراتيجية دمج الـ RSI مع البولنجر باند لصفقات الـ 5 دقائق
+        # شراء إذا لمس السعر خط البولنجر السفلي وكان الـ RSI تحت 30
+        # بيع إذا لمس السعر خط البولنجر العلوي وكان الـ RSI فوق 70
+        
+        if rsi < 30 or close_price <= bb_lower:
+            signal = "🟢 شراء قوي (CALL / HIGHER)"
+            emoji = "🚀"
+        elif rsi > 70 or close_price >= bb_upper:
+            signal = "🔴 بيع قوي (PUT / LOWER)"
+            emoji = "📉"
+        else:
+            signal = "⏳ تذبذب طبيعي - انتظر شمعة انعكاسية"
+            emoji = "⚪"
+            
+        text = (
+            f"📊 **تحليل الزوج:** `{ticker_symbol}`\n"
+            f"💰 السعر الحالي: {close_price:.5f}\n"
+            f"📈 مؤشر RSI: {rsi:.2f}\n"
+            f"↕️ نطاق Bollinger: [{bb_lower:.4f} - {bb_upper:.4f}]\n\n"
+            f"{emoji} **توصية Pocket Option الحالية:**\n"
+            f"👈 **{signal}**\n"
+            f"⏱️ وقت انتهاء الصفقة المقترح: **5 دقائق**"
+        )
+        return text
+    except Exception as e:
+        return "⚠️ حدث خطأ أثناء الاتصال بمزود البيانات الحية لـ Pocket Option."
 
-# ================= أزواج السوق (24 زوجاً) =================
-ALL_FOREX_PAIRS = [
-    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X",
-    "USDCAD=X", "USDCHF=X", "NZDUSD=X", "EURGBP=X",
-    "EURJPY=X", "EURCAD=X", "EURAUD=X", "EURNZD=X",
-    "EURCHF=X", "GBPJPY=X", "GBPCAD=X", "GBPAUD=X",
-    "GBPNZD=X", "AUDJPY=X", "AUDCAD=X", "AUDNZD=X",
-    "AUDCHF=X", "NZDJPY=X", "NZDCAD=X", "CHFJPY=X"
-]
+# أمر البداية وعرض القوائم
+@bot.message_handler(commands=['start', 'help'])
+def start(message):
+    help_text = (
+        "🤖 **مرحباً بك في بوت Pocket Option الشامل لجميع الأزواج!**\n\n"
+        "لتحليل أي زوج والحصول على إشارة دخول (CALL / PUT)، أرسل اسم الزوج مباشرة من القائمة بالأسفل بدون مسافات، مثال:\n"
+        "👈 `EUR/USD` أو `الذهب`\n\n"
+        "📋 **العملات المتاحة للتحليل الفني الآن:**\n"
+    )
+    # إضافة قائمة الأزواج في رسالة الترحيب بشكل منظم ليقوم المستخدم بنسخها
+    for name in PO_MARKETS.keys():
+        help_text += f"🔹 `{name}`\n"
+        
+    bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
 
-def trading_bot_loop():
-    print("🤖 بدأ تشغيل محرك تحليل السوق ...")
-    while True:
-        try:
-            for symbol in ALL_FOREX_PAIRS:
-                # جلب بيانات الدقيقة لتناسب الصفقات السريعة
-                df = yf.download(symbol, period="1d", interval="1m", progress=False)
-                if df.empty or len(df) < 30:
-                    continue
+# استقبال رسائل المستخدم ومطابقتها مع قائمة الأزواج الشاملة
+@bot.message_handler(func=lambda message: True)
+def handle_all_messages(message):
+    user_input = message.text.strip()
+    
+    # البحث عن الزوج المناسب في القائمة الشاملة
+    matched_key = None
+    for key in PO_MARKETS.keys():
+        if user_input.lower() in key.lower() or key.lower() in user_input.lower():
+            matched_key = key
+            break
+            
+    if matched_key:
+        msg = bot.reply_to(message, f"🔄 جاري سحب الشموع وتحليل الزوج `{matched_key}` فنيّاً...")
+        analysis_result = generate_po_signal(PO_MARKETS[matched_key])
+        bot.edit_message_text(analysis_result, chat_id=message.chat.id, message_id=msg.message_id, parse_mode='Markdown')
+    else:
+        bot.reply_to(message, "❌ اسم الزوج غير مدرج في القائمة الرسمية لـ Pocket Option العادية. يرجى إرسال الرمز مثل: `EUR/USD` أو `GBP/JPY`.")
 
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
-
-                # 1. Bollinger Bands (20)
-                df["MA20"] = df["Close"].rolling(20).mean()
-                df["STD"] = df["Close"].rolling(20).std()
-                df["Upper"] = df["MA20"] + (df["STD"] * 2)
-                df["Lower"] = df["MA20"] - (df["STD"] * 2)
-
-                # 2. RSI (14)
-                delta = df["Close"].diff()
-                gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-                rs = gain / loss
-                df["RSI"] = 100 - (100 / (1 + rs))
-
-                # 3. Stochastic (%K & %D)
-                low_min = df["Low"].rolling(14).min()
-                high_max = df["High"].rolling(14).max()
-                df["Stoch_K"] = ((df["Close"] - low_min) / (high_max - low_min)) * 100
-                df["Stoch_D"] = df["Stoch_K"].rolling(3).mean()
-
-                close = df["Close"].iloc[-1]
-                upper = df["Upper"].iloc[-1]
-                lower = df["Lower"].iloc[-1]
-                rsi = df["RSI"].iloc[-1]
-                stoch_k = df["Stoch_K"].iloc[-1]
-                stoch_d = df["Stoch_D"].iloc[-1]
-                pair_name = symbol.replace("=X", "")
-
-                # شروط الصفقات
-                if close <= lower and rsi < 30 and stoch_k < 20:
-                    msg = (
-                        f"🟢 **صفقة صعود (شراء)**\n"
-                        f"📊 الزوج: **{pair_name}**\n"
-                        f"📈 السعر: `{close:.4f}`\n"
-                        f"📉 RSI: `{rsi:.1f}` | Stoch K: `{stoch_k:.1f}`"
-                    )
-                    bot.send_message(CHAT_ID, msg)
-
-                elif close >= upper and rsi > 70 and stoch_k > 80:
-                    msg = (
-                        f"🔴 **صفقة هبوط (بيع)**\n"
-                        f"📊 الزوج: **{pair_name}**\n"
-                        f"📉 السعر: `{close:.4f}`\n"
-                        f"📈 RSI: `{rsi:.1f}` | Stoch K: `{stoch_k:.1f}`"
-                    )
-                    bot.send_message(CHAT_ID, msg)
-
-                time.sleep(2)
-
-            time.sleep(60)
-        except Exception as e:
-            print(f"خطأ: {e}")
-            time.sleep(30)
-
-if __name__ == "__main__":
-    t = threading.Thread(target=trading_bot_loop)
-    t.start()
-    run_web()
+if __name__ == '__main__':
+    print("🤖 البوت الشامل لجميع أزواج Pocket Option يعمل الآن بنجاح...")
+    bot.infinity_polling()
